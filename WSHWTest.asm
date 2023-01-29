@@ -123,7 +123,7 @@ initialize:
 	mov word [es:di], outputCharHandler
 	mov word [es:di + 2], MYSEGMENT
 
-	mov ax, INT_BASE
+	mov ax, INT_BASE	; 0x20
 	out IO_INT_VECTOR, al
 
 	mov di, INTVEC_VBLANK_START
@@ -198,12 +198,6 @@ main:
 	call writeString
 	mov si, menuTestMiscStr
 	call writeString
-	mov si, menuTestMultiplicationStr
-	call writeString
-	mov si, menuTestDivisionStr
-	call writeString
-	mov si, menuTestSDivisionStr
-	call writeString
 
 	; Turn on display
 	mov al, BG_ON
@@ -258,9 +252,9 @@ dontMoveUp:
 	test bl, (PAD_DOWN<<4)
 	jz dontMoveDown
 	add cl, 1
-	cmp cl, 7
+	cmp cl, 4			; Entry count
 	js dontMoveDown
-	mov cl, 7
+	mov cl, 4			; Entry count
 dontMoveDown:
 	mov [es:menuYPos], cl
 
@@ -295,12 +289,6 @@ dontMoveDown:
 	jz testRolShift
 	cmp cl, 4
 	jz testMisc
-	cmp cl, 5
-	jz testMultiplication
-	cmp cl, 6
-	jz testDivision
-	cmp cl, 7
-	jz testSDivision
 	; No input, restart main loop
 	jmp mainLoop
 ;-----------------------------------------------------------------------------
@@ -342,25 +330,6 @@ testMisc:
 	call checkKeyInput
 	jmp main
 
-;-----------------------------------------------------------------------------
-testMultiplication:
-	call testMulu8
-
-	call checkKeyInput
-	jmp main
-
-;-----------------------------------------------------------------------------
-testDivision:
-	call testAam
-
-	call checkKeyInput
-	jmp main
-;-----------------------------------------------------------------------------
-testSDivision:
-	call testDivs8
-
-	call checkKeyInput
-	jmp main
 ;-----------------------------------------------------------------------------
 ; Test equality by CMP, SUB & XOR of all byte/word values.
 ;-----------------------------------------------------------------------------
@@ -778,482 +747,6 @@ rol8NoOv:
 	pop cx
 	pop bx
 	ret
-
-;-----------------------------------------------------------------------------
-; Test unsigned multiplication of all byte values.
-;-----------------------------------------------------------------------------
-testMulu8:
-	mov si, testingMuluStr
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-
-	xor cx, cx
-	mov [es:inputVal1], cx
-	mov [es:inputVal2], cx
-testMuluLoop2:
-	mov [es:inputVal2], ch
-	xor bx, bx
-	mov [es:expectedResult1], bx
-testMuluLoop:
-	mov [es:inputVal1], cl
-	mov ax, 0xF242
-	mov bx, [es:expectedResult1]
-	xor bh, 0
-	jz noMuluOverflow
-	or ax, 0x0801
-noMuluOverflow:
-	mov [es:expectedFlags], ax
-	call testMulu8Single
-	xor al, 0
-	jnz stopMuluTest
-continueMulu:
-	xor bx, bx
-	mov bl, ch
-	add [es:expectedResult1], bx
-	inc cl
-	jnz testMuluLoop
-	inc ch
-	jnz testMuluLoop2
-
-	hlt						; Wait for VBlank
-	mov byte [es:isTesting], 0
-	mov al, 10
-	int 0x10
-	mov si, okStr
-	call writeString
-	xor ax, ax
-	ret
-stopMuluTest:
-	call checkKeyInput
-	xor al, 0
-	jnz continueMulu
-	ret
-
-;-----------------------------------------------------------------------------
-testMulu8Single:
-	push bx
-	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-
-	mov al, [es:inputVal1]
-	mov bl, [es:inputVal2]
-	popf
-	mul bl
-	pushf
-
-	mov [es:testedResult1], ax
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	xor ax, cx
-	jnz muluFailed
-	mov cx, [es:expectedFlags]
-	xor bx, cx
-	jnz muluFailed
-
-	pushf
-	pop ax
-	or ax, 0x78FF
-	push ax
-	mov [es:inputFlags], ax
-
-	mov al, [es:inputVal1]
-	mov cl, [es:inputVal2]
-	popf
-	mul cl
-	pushf
-
-	mov [es:testedResult1], ax
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	xor ax, cx
-	jnz muluFailed
-	mov cx, [es:expectedFlags]
-	xor bx, cx
-	jnz muluFailed
-
-	xor ax, ax
-	pop cx
-	pop bx
-	ret
-
-muluFailed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-
-;-----------------------------------------------------------------------------
-; Test signed division of all word/byte values.
-;-----------------------------------------------------------------------------
-testDivs8:
-	mov si, testingDivsStr
-	call writeString
-	mov si, test16x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 2
-
-	xor cx, cx
-	xor dx, dx
-testDivs8Loop:
-	mov [es:inputVal1], dl
-	mov [es:inputVal2], cx
-	call calcDivs8Result
-	call testDivs8Single
-	xor al, 0
-	jnz stopDivs8Test
-continue8Divs:
-	mov byte [es:isTesting], 2
-	inc cx
-	jnz testDivs8Loop
-	inc dl
-	jnz testDivs8Loop
-
-	hlt						; Wait for VBlank
-	mov byte [es:isTesting], 0
-	mov al, 10
-	int 0x10
-	mov si, okStr
-	call writeString
-	xor ax, ax
-	ret
-stopDivs8Test:
-	call checkKeyInput
-	xor al, 0
-	jnz continue8Divs
-	ret
-
-;-----------------------------------------------------------------------------
-testDivs8Single:
-	push bx
-	push cx
-
-	mov byte [es:testedException], 0
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-
-	mov bl, [es:inputVal1]
-	mov ax, [es:inputVal2]
-	popf
-	idiv bl
-	pushf
-
-	mov [es:testedResult1], ax
-	pop cx
-	mov [es:testedFlags], cx
-	mov bx, [es:expectedResult1]
-	xor ax, bx
-	jnz divs8Failed
-	mov al, [es:testedException]
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	cmp al, 0
-	jz divs8DoZTst
-	and cx, 0xFFBF				; Mask out Zero flag
-divs8DoZTst:
-	cmp cx, 0
-	jnz divs8Failed
-	mov bl, [es:expectedException]
-	xor al, bl
-	jnz divs8Failed
-
-	mov byte [es:testedException], 0
-	pushf
-	pop ax
-	or ax, 0x78FF
-	push ax
-	mov [es:inputFlags], ax
-
-	mov cl, [es:inputVal1]
-	mov ax, [es:inputVal2]
-	popf
-	idiv cl
-	pushf
-
-	mov [es:testedResult1], ax
-	pop cx
-	mov [es:testedFlags], cx
-	mov bx, [es:expectedResult1]
-	xor ax, bx
-	jnz divs8Failed
-	mov al, [es:testedException]
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	cmp al, 0
-	jz divs8DoZTst2
-	and cx, 0xFFBF				; Mask out Zero flag
-divs8DoZTst2:
-	cmp cx, 0
-	jnz divs8Failed
-	mov bl, [es:expectedException]
-	xor al, bl
-	jnz divs8Failed
-
-	xor ax, ax
-	pop cx
-	pop bx
-	ret
-
-divs8Failed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-
-;-----------------------------------------------------------------------------
-calcDivs8Result:
-	push bx
-	push cx
-	push dx
-
-	mov byte [es:expectedException], 0
-	mov al, [es:inputVal1]
-	cbw
-	mov bx, ax
-	mov ax, [es:inputVal2]
-	mov [es:expectedResult1], ax
-	mov dl, ah
-	mov dh, ah
-	xor dh, bh
-	cmp bx, 0
-	jz divs8Error
-	jns den8Pos
-	neg bx
-den8Pos:
-	cmp ax, 0
-	jz divs8Done
-	jns enum8Pos
-	neg ax
-enum8Pos:
-	mov cx, ax
-	shr cx, 7
-	cmp cx, bx
-	jnc divs8ErrCnt
-	xor cx, cx
-divs8Loop:
-	sub ax, bx
-	jc divs8SetRes
-	inc cl
-	jmp divs8Loop
-
-divs8SetRes:
-	add ax, bx
-	cmp dh, 0
-	jns result8Pos
-	neg cl
-result8Pos:
-	cmp dl, 0
-	jns rest8Pos
-	neg al
-rest8Pos:
-	mov ah, al
-	mov al, cl
-	mov [es:expectedResult1], ax
-divs8Done:
-	mov dx, 0xF202				; Expected flags
-	lea bx, PZSTable
-	xlat						; Fetch Sign, Zero & Parity
-	or dl, al
-divs8End:
-	mov [es:expectedFlags], dx
-	pop dx
-	pop cx
-	pop bx
-	ret
-divs8Error:
-	cmp ax, 0x8000
-	jnz divs8ErrCnt
-	mov ax, 0x0081
-	mov [es:expectedResult1], ax
-	jmp divs8Done
-divs8ErrCnt:
-	mov byte [es:expectedException], 1
-	mov dx, 0xF202				; Expected flags
-	call getLFSR1Value
-	and al, 0x10
-	mov al, 0x10
-	imul al
-	jnc divs8NoCV
-	or dx, 0x0801				; Carry & Overflow
-divs8NoCV:
-	jmp divs8End
-;-----------------------------------------------------------------------------
-; Test unsigned division of all byte/byte values.
-;-----------------------------------------------------------------------------
-testAam:
-	mov si, testingAamStr
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-	mov byte [es:selfModifyingCode], 0xD4	; AAM
-	mov byte [es:selfModifyingCode+2], 0xCB	; RETF
-
-	xor cx, cx
-testAamLoop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], ch
-	call calcAamResult
-	call testAamSingle
-	xor al, 0
-	jnz stopAamTest
-continueAam:
-	inc cx
-	jnz testAamLoop
-
-	hlt						; Wait for VBlank
-	mov byte [es:isTesting], 0
-	mov al, 10
-	int 0x10
-	mov si, okStr
-	call writeString
-	xor ax, ax
-	ret
-stopAamTest:
-	call checkKeyInput
-	xor al, 0
-	jnz continueAam
-	ret
-
-;-----------------------------------------------------------------------------
-testAamSingle:
-	push bx
-	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-
-	mov byte [es:testedException], 0
-	mov bl, [es:inputVal1]
-	mov al, [es:inputVal2]
-	mov ah, al
-	xor ah, 0xa5
-	mov [es:selfModifyingCode+1], bl	; dividend
-
-	popf
-	call 0x0000:selfModifyingCode
-	pushf
-
-	mov [es:testedResult1], ax
-	pop cx
-	mov [es:testedFlags], cx
-	mov bx, [es:expectedResult1]
-	xor ax, bx
-	jnz aamFailed
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	jnz aamFailed
-	mov al, [es:testedException]
-	mov bl, [es:expectedException]
-	xor al, bl
-	jnz aamFailed
-
-	pushf
-	pop ax
-	or ax, 0x78FF
-	push ax
-	mov [es:inputFlags], ax
-
-	mov byte [es:testedException], 0
-	mov al, [es:inputVal2]
-	mov ah, al
-	xor ah, 0xa5
-	popf
-	call 0x0000:selfModifyingCode
-	pushf
-
-	mov [es:testedResult1], ax
-	pop cx
-	mov [es:testedFlags], cx
-	mov bx, [es:expectedResult1]
-	xor ax, bx
-	jnz aamFailed
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	jnz aamFailed
-	mov al, [es:testedException]
-	mov bl, [es:expectedException]
-	xor al, bl
-	jnz aamFailed
-
-	xor ax, ax
-	pop cx
-	pop bx
-	ret
-
-aamFailed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-;-----------------------------------------------------------------------------
-calcAamResult:
-	push bx
-	push dx
-
-	mov byte [es:expectedException], 0
-	mov bl, [es:inputVal1]
-	mov al, [es:inputVal2]
-	mov ah, al
-	xor ah, 0xa5
-	mov [es:expectedResult1], ax
-	xor bl, 0
-	jz aamError
-	xor ah, ah
-aamLoop:
-	sub al, bl
-	jc aamSetRes
-	inc ah
-	jmp aamLoop
-
-aamSetRes:
-	add al, bl
-	mov [es:expectedResult1], ax
-	mov dx, 0xF202				; Expected flags
-	lea bx, PZSTable
-	xlat				; Fetch Sign, Zero & Parity
-	or dl, al
-aamDone:
-	mov [es:expectedFlags], dx
-	pop dx
-	pop bx
-	ret
-
-aamError:
-	mov dx, 0xF202				; Expected flags
-	test al, 0xc0
-	jnz aamErrNoZ
-	or dl, 0x40			; Zero flag
-aamErrNoZ:
-	call getLFSR1Value
-	and al, 0x10
-	mov bl, al
-	mul bl
-	jnc aamNoCV
-	or dx, 0x0801				; Carry & Overflow
-aamNoCV:
-	mov byte [es:expectedException], 1
-	jmp aamDone
 
 ;-----------------------------------------------------------------------------
 ; Test Decimal Adjust after Addition of all byte values & AC + CY.
@@ -1809,26 +1302,6 @@ PZSTable:
 	db PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S
 	db PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S
 
-DecTable:
-	db 0xFF, 0x00
-IncTable:
-	db 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10
-	db 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20
-	db 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30
-	db 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40
-	db 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50
-	db 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x60
-	db 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70
-	db 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F, 0x80
-	db 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B, 0x8C, 0x8D, 0x8E, 0x8F, 0x90
-	db 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F, 0xA0
-	db 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF, 0xB0
-	db 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xC0
-	db 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF, 0xD0
-	db 0xD1, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xDB, 0xDC, 0xDD, 0xDE, 0xDF, 0xE0
-	db 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xED, 0xEE, 0xEF, 0xF0
-	db 0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF, 0x00
-
 FontTilePalette:
 	dw 0xFFF, 0x000
 
@@ -1900,50 +1373,14 @@ menuTestLogicStr: db "  Test Logic.",10 , 0
 menuTestArithmeticStr: db "  Test Arithmetic.",10 , 0
 menuTestRolShiftStr: db "  Test Rol & Shift.",10 , 0
 menuTestMiscStr: db "  Test Misc.",10 , 0
-menuTestMultiplicationStr: db "  Test Multiplication.",10 , 0
-menuTestDivisionStr: db "  Test Division.",10 , 0
-menuTestSDivisionStr: db "  Test Signed Division.",10 , 0
 
 testingEquStr: db "Equal by CMP, SUB & XOR", 10, 0
-testingAnd8Str: db "Logical AND bytes", 10, 0
-testingOr8Str: db "Logical OR bytes", 10, 0
-testingTest8Str: db "Logical TEST bytes", 10, 0
-testingXor8Str: db "Logical XOR bytes", 10, 0
-testingNot8Str: db "Logical NOT bytes", 10, 0
-testingInc8Str: db "INC bytes", 10, 0
-testingDec8Str: db "DEC bytes", 10, 0
 
 testingAdd8Str: db "ADD bytes", 10, 0
-testingSub8Str: db "SUB bytes", 10, 0
-testingCmp8Str: db "CMP bytes", 10, 0
-testingNeg8Str: db "NEG bytes", 10, 0
-testingAdc8Str: db "ADC/ADDC bytes", 10, 0
-testingSbb8Str: db "SBB/SUBC bytes", 10, 0
 
 testingRol8Str: db "ROL byte by CL", 10, 0
-testingRor8Str: db "ROR byte by CL", 10, 0
-testingRcl8Str: db "RCL/ROLC byte by CL", 10, 0
-testingRcr8Str: db "RCR/RORC byte by CL", 10, 0
-testingShl8Str: db "SHL byte by CL", 10, 0
-testingShr8Str: db "SHR byte by CL", 10, 0
-testingSar8Str: db "SAR/SHRA byte by CL", 10, 0
 
-testingAasStr: db "AAS/ADJBS", 10, 0
 testingDaaStr: db "DAA/ADJ4A", 10, 0
-testingDasStr: db "DAS/ADJ4S", 10, 0
-
-testingMuluStr: db "Unsigned Multiplication 8*8", 10, 0
-testingMulsStr: db "Signed Multiplication 8*8", 10, 0
-testingMulu16Str: db "Unsigned Multiplication 16*16", 0
-testingMuls16Str: db "Signed Multiplication 16*16", 10, 0
-
-testingDivsStr: db "Signed Division 16/8", 10, 0
-testingDivu32Str: db "Unsigned Division 32/16", 10, 0
-testingDivs32Str: db "Signed Division 32/16", 10, 0
-testingAamStr: db "AAM/CVTBD (division 8/8)", 10, 0
-testingAadStr: db "AAD/CVTDB (mulu 8*8, add 8)", 10, 0
-
-testingJmpStr: db "Conditional JMP/BRA", 10, 0
 
 test8InputStr: db "Testing Input: 0x00", 0
 test16InputStr: db "Testing Input: 0x0000", 0
