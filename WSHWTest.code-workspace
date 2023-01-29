@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"*.wsc": true,
+			"*.zip": true
+		},
+		"terminal.integrated.env.osx": {
+			"PATH": "$PATH:/opt/nasm"
+		}
+	}
+}

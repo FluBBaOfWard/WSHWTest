@@ -1,0 +1,25 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "${workspaceFolder}/build.sh"
+        },
+        {
+            "label": "run",
+            "type": "shell",
+            "dependsOn": [
+                "build"
+            ],
+            "isBackground": true,
+            "command": "C:/Ares/Ares.exe ${workspaceFolder}/${workspaceFolderBasename}.wsc",
+            "osx": {
+                "command": "/Applications/Ares.app/Contents/MacOS/Ares ${workspaceFolder}/${workspaceFolderBasename}.wsc"
+            },
+            "problemMatcher": []
+        }
+    ]
+}
