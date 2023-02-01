@@ -123,16 +123,61 @@ initialize:
 	mov word [es:di], outputCharHandler
 	mov word [es:di + 2], MYSEGMENT
 
+
 	mov ax, INT_BASE	; 0x20
 	out IO_INT_VECTOR, al
+
+	mov di, INTVEC_HBLANK_TIMER
+	add di, ax
+	shl di, 2
+	mov word [es:di], hblankTimerHandler
+	mov word [es:di + 2], MYSEGMENT
 
 	mov di, INTVEC_VBLANK_START
 	add di, ax
 	shl di, 2
+;	mov word [es:di], vblankHandler
 	mov word [es:di], vblankInterruptHandler
 	mov word [es:di + 2], MYSEGMENT
 
-	; Clear HBL & Timer
+	mov di, INTVEC_VBLANK_TIMER
+	add di, ax
+	shl di, 2
+	mov word [es:di], vblankTimerHandler
+	mov word [es:di + 2], MYSEGMENT
+
+	mov di, INTVEC_DRAWING_LINE
+	add di, ax
+	shl di, 2
+	mov word [es:di], lineCompareHandler
+	mov word [es:di + 2], MYSEGMENT
+
+	mov di, INTVEC_SERIAL_RECEIVE
+	add di, ax
+	shl di, 2
+	mov word [es:di], serialReceiveHandler
+	mov word [es:di + 2], MYSEGMENT
+
+	mov di, INTVEC_RTC_ALARM
+	add di, ax
+	shl di, 2
+	mov word [es:di], cartridgeIrqHandler
+	mov word [es:di + 2], MYSEGMENT
+
+	mov di, INTVEC_KEY_PRESS
+	add di, ax
+	shl di, 2
+	mov word [es:di], keyPressHandler
+	mov word [es:di + 2], MYSEGMENT
+
+	mov di, INTVEC_SERIAL_SEND
+	add di, ax
+	shl di, 2
+	mov word [es:di], serialTransmitHandler
+	mov word [es:di + 2], MYSEGMENT
+
+
+	; Clear HBL & Timers
 	xor ax, ax
 	out IOw_H_BLANK_TIMER, ax
 	out IO_TIMER_CTRL, al
@@ -190,7 +235,7 @@ main:
 
 	mov si, menuTestAllStr
 	call writeString
-	mov si, menuTestLogicStr
+	mov si, menuTestInterruptStr
 	call writeString
 	mov si, menuTestArithmeticStr
 	call writeString
@@ -297,14 +342,17 @@ dontMoveDown:
 ;
 ;-----------------------------------------------------------------------------
 testAll:
-	call testEqu
+	call testIrq
+	call testAdd8
+	call testRol8
+	call testDaa
 
 	call checkKeyInput
 	jmp main
 
 ;-----------------------------------------------------------------------------
 testLogic:
-	call testEqu
+	call testIrq
 
 	call checkKeyInput
 	jmp main
@@ -331,122 +379,316 @@ testMisc:
 	jmp main
 
 ;-----------------------------------------------------------------------------
-; Test equality by CMP, SUB & XOR of all byte/word values.
+; Test Interrupt Manager.
 ;-----------------------------------------------------------------------------
-testEqu:
-	mov si, testingEquStr
+testIrq:
+	mov si, testingIrqStr
 	call writeString
-	mov si, test8x8InputStr
+
+	mov si, testingIrq0Str
 	call writeString
 
 	mov byte [es:isTesting], 1
 
-	mov cl, 0
-testEqu8Loop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], cl
-	mov al, cl
-	cmp al, cl
-	jnz equ8Failed
-	sub al, cl
-	jnz equ8Failed
-	mov al, cl
-	xor al, cl
-	jnz equ8Failed
-continueEqu8:
-	inc cl
-	jnz testEqu8Loop
+	cli
 
-	mov cl, 0
-testNeq8Loop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], cl
-	mov al, cl
-	inc al
-	cmp al, cl
-	jz neq8Failed
-	sub al, cl
-	jz neq8Failed
-	mov al, cl
-	inc al
-	xor al, cl
-	jz neq8Failed
-continueNeq8:
-	inc cl
-	jnz testNeq8Loop
+	; Disable all interrupts
+	xor al, al
+	out IO_INT_ENABLE, al
 
-	hlt
+	; Acknowledge all interrupts
+	dec al
+	out INT_CAUSE_CLEAR, al
+
+	; Setup HBL/VBL Timers
+	mov ax, 1
+	out IOw_H_BLANK_TIMER, ax
+	out IOw_V_BLANK_TIMER, ax
+	mov al, 0x0F
+	out IO_TIMER_CTRL, al
+
+	mov al, 0x40
+	out IO_LCD_INTERRUPT, al
+
+	; Enable serial
+	mov al, COMM_ENABLE | COMM_SPEED_38400
+	out IO_SERIAL_STATUS, al
+
+	mov al, KEYPAD_READ_BUTTONS
+	out IO_KEYPAD, al
+
+	mov bl,40
+	call waitLine
+	mov bl,20
+	call waitLine
+
+	in al, IO_INT_CAUSE
+	xor al, 0
+	mov si, failedStr
+	jnz int0Fail
+	mov si, okStr
+int0Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingIrq1Str
+	call writeString
+
+	; Enable all interrupts
+	mov al, 0xFF
+	out IO_INT_ENABLE, al
+
+	mov bl,40
+	call waitLine
+	mov bl,20
+	call waitLine
+
+	in al, IO_INT_CAUSE
+	xor al, 0
+	mov si, failedStr
+	jz int1Fail
+	mov si, okStr
+int1Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingIrq2Str
+	call writeString
+
+	; Disable all interrupts
+	xor al, al
+	out IO_INT_ENABLE, al
+
+	mov bl,40
+	call waitLine
+	mov bl,20
+	call waitLine
+
+	in al, IO_INT_CAUSE
+	xor al, 0
+	mov si, failedStr
+	jz int2Fail
+	mov si, okStr
+int2Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingIrq3Str
+	call writeString
+
+	; Acknowledge all interrupts
+	mov al, 0xFF
+	out INT_CAUSE_CLEAR, al
+
+	mov bl,40
+	call waitLine
+	mov bl,20
+	call waitLine
+
+	in al, IO_INT_CAUSE
+	xor al, 0
+	mov si, failedStr
+	jnz int3Fail
+	mov si, okStr
+int3Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingIrq4Str
+	call writeString
+
+	; Enable VBL interrupt
+	mov al, INT_VBLANK_START 
+	out IO_INT_ENABLE, al
+
+	mov bl,80
+	call waitLine
+	mov bl,60
+	call waitLine
+
+	mov word [es:vblankIrqCount], 0
+
+	sti
+	nop
+	cli
+
+	mov al, [es:vblankIrqCount]
+	xor al, 0
+	mov si, failedStr
+	jz int4Fail
+	mov si, okStr
+int4Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingIrq5Str
+	call writeString
+
+	; Enable VBL interrupt
+	mov al, INT_VBLANK_START 
+	out IO_INT_ENABLE, al
+
+	mov bl,40
+	call waitLine
+	mov bl,20
+	call waitLine
+
+	; Disable all interrupts
+	xor al, al
+	out IO_INT_ENABLE, al
+
+	mov word [es:vblankIrqCount], 0
+
+	sti
+	nop
+	cli
+
+	mov al, [es:vblankIrqCount]
+	xor al, 0
+	mov si, failedStr
+	jz int5Fail
+	mov si, okStr
+int5Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingIrq6Str
+	call writeString
+
+	; Enable VBL interrupt
+	mov al, INT_VBLANK_START 
+	out IO_INT_ENABLE, al
+
+	mov bl,40
+	call waitLine
+	mov bl,20
+	call waitLine
+
+	; Acknowledge VBL interrupt
+	mov al, INT_VBLANK_START 
+	out INT_CAUSE_CLEAR, al
+
+	mov word [es:vblankIrqCount], 0
+
+	sti
+	nop
+	cli
+
+	mov al, [es:vblankIrqCount]
+	xor al, 0
+	mov si, failedStr
+	jnz int6Fail
+	mov si, okStr
+int6Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingIrq7Str
+	call writeString
+
+	; Enable HBL interrupt
+	mov al, INT_HBLANK_TIMER 
+	out IO_INT_ENABLE, al
+
+	; Acknowledge all interrupts
+	mov al, 0xFF
+	out INT_CAUSE_CLEAR, al
+
+	mov bl,40
+	call waitLine
+	mov bl,20
+	call waitLine
+
+	mov word [es:hblankTimerIrqCount], 0
+
+	sti
+	nop
+	nop
+	cli
+
+	mov al, [es:hblankTimerIrqCount]
+	cmp al, 2
+	mov si, failedStr
+	jnz int7Fail
+	mov si, okStr
+int7Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+
+	mov byte [es:isTesting], 0
 	mov al, 10
 	int 0x10
-	mov si, test16x16InputStr
-	call writeString
-	mov byte [es:isTesting], 3
+	xor ax, ax
+	ret
 
-	mov cx, 0
-testEqu16Loop:
-	mov [es:inputVal1], cx
-	mov [es:inputVal2], cx
-	mov ax, cx
-	cmp ax, cx
-	jnz equ16Failed
-	sub ax, cx
-	jnz equ16Failed
-	mov ax, cx
-	xor ax, cx
-	jnz equ16Failed
-continueEqu16:
-	inc cx
-	jnz testEqu16Loop
 
-	mov cx, 0
-testNeq16Loop:
-	mov [es:inputVal1], cx
-	mov [es:inputVal2], cx
-	mov ax, cx
-	inc ax
-	cmp ax, cx
-	jz neq16Failed
-	sub ax, cx
-	jz neq16Failed
-	mov ax, cx
-	inc ax
-	xor ax, cx
-	jz neq16Failed
-continueNeq16:
-	inc cx
-	jnz testNeq16Loop
+	call printHexB
+	mov al, 10
+	int 0x10		; newline
 
-	hlt						; Wait for VBlank
+	; Disable serial
+	xor al, al
+	out IO_SERIAL_STATUS, al
+
+	mov bl,40
+	call waitLine
+	mov bl,20
+	call waitLine
+
+	; Disable all interrupts
+	xor al, al
+	out IO_INT_ENABLE, al
+
+	; Disable serial
+	xor al, al
+	out IO_SERIAL_STATUS, al
+
+	mov bl,40
+	call waitLine
+	mov bl,20
+	call waitLine
+
+	in al, IO_INT_CAUSE
+	call printHexB
+	mov al, 10
+	int 0x10		; newline
+
+;----------------------------
+	; Disable serial
+	xor al, al
+	out IO_SERIAL_STATUS, al
+
+	; Clear HBL & Timers
+	xor ax, ax
+	out IOw_H_BLANK_TIMER, ax
+	out IO_TIMER_CTRL, al
+
+	sti
+	nop
+	cli
+
+	mov ax, [es:hblankTimerIrqCount]
+	call printHexW
+	mov al, 10
+	int 0x10		; newline
+
+
+	; Acknowledge all interrupts
+	mov al, 0xFF
+	out INT_CAUSE_CLEAR, al
+
+	; Enable VBL interrupt
+	mov al, INT_VBLANK_START 
+	out IO_INT_ENABLE, al
+	sti
+
 	mov byte [es:isTesting], 0
 	mov al, 10
 	int 0x10
 	mov si, okStr
 	call writeString
 	xor ax, ax
-	ret
-equ8Failed:
-	call printFailedResult
-	call checkKeyInput
-	xor al, 0
-	jnz continueEqu8
-	ret
-neq8Failed:
-	call printFailedResult
-	call checkKeyInput
-	xor al, 0
-	jnz continueNeq8
-	ret
-equ16Failed:
-	call printFailedResult
-	call checkKeyInput
-	xor al, 0
-	jnz continueEqu16
-	ret
-neq16Failed:
-	call printFailedResult
-	call checkKeyInput
-	xor al, 0
-	jnz continueNeq16
 	ret
 
 ;-----------------------------------------------------------------------------
@@ -1027,6 +1269,12 @@ printFailedResult:
 
 	ret
 
+waitLine:
+   in al, IO_LCD_LINE
+   cmp al,bl
+   jnz waitLine
+   ret
+
 ;-----------------------------------------------------------------------------
 ; Clear tilemap line.
 ;-----------------------------------------------------------------------------
@@ -1102,8 +1350,6 @@ printNibble:
 	ret
 ;-----------------------------------------------------------------------------
 ; Our vblank interrupt handler
-; It is called automatically whenever the vblank interrupt occurs, 
-; that is, every time the screen is fully drawn.
 ;-----------------------------------------------------------------------------
 vblankInterruptHandler:
 	push ax
@@ -1111,60 +1357,18 @@ vblankInterruptHandler:
 	push di
 
 	; globalFrameCounter++
-	mov ax, [es:globalFrameCounter]
-	inc ax
-	mov [es:globalFrameCounter], ax
+	inc word [es:globalFrameCounter]
+	inc word[es:vblankIrqCount]
 
 	mov ax, [es:bgPos]
 	out IO_SCR1_SCRL_X, ax
 	mov ax, [es:fgPos]
 	out IO_SCR2_SCRL_X, ax
 
-	mov al, [es:isTesting]
-	xor al, 0
-	jz skipValuePrint
-	cmp al, 1
-	jnz skipValue8x8Print
-	mov byte [es:cursorXPos], 17
-	mov al, [es:inputVal2]
-	call printHexB
-	mov byte [es:cursorXPos], 23
-	mov al, [es:inputVal1]
-	call printHexB
-	cmp byte [es:inputCarry], 0
-	jz skipValuePrint
-	mov byte [es:cursorXPos], 26
-	mov al, 'C'
-	int 0x10
-	jmp skipValuePrint
-skipValue8x8Print:
-	cmp al, 2
-	jnz skipValue16x8Print
-	mov byte [es:cursorXPos], 17
-	mov ax, [es:inputVal2]
-	call printHexW
-	mov byte [es:cursorXPos], 25
-	mov al, [es:inputVal1]
-	call printHexB
-	jmp skipValuePrint
-skipValue16x8Print:
-	cmp al, 3
-	jnz skipValue8Print
-	mov byte [es:cursorXPos], 15
-	mov ax, [es:inputVal2]
-	call printHexW
-	mov byte [es:cursorXPos], 23
-	mov ax, [es:inputVal1]
-	call printHexW
-	jmp skipValuePrint
-skipValue8Print:
-	cmp al, 4
-	jnz skipValuePrint
-	mov byte [es:cursorXPos], 17
-	mov al, [es:inputVal1]
-	call printHexB
-	jmp skipValuePrint
-skipValuePrint:
+;	mov al, [es:isTesting]
+;	xor al, 0
+;	jz skipValuePrint
+;skipValuePrint:
 acknowledgeVBlankInterrupt:
 	mov al, INT_VBLANK_START
 	out INT_CAUSE_CLEAR, al
@@ -1192,7 +1396,7 @@ int1InstructionHandler:
 ; The NMI handler
 ;-----------------------------------------------------------------------------
 nmiHandler:
-	mov byte [es:testedException], 2
+	inc word[es:nmiIrqCount]
 	iret
 ;-----------------------------------------------------------------------------
 ; The Int3 handler
@@ -1223,7 +1427,6 @@ boundsExceptionHandler:
 undefinedInstructionHandler:
 	mov byte [es:testedException], 6
 	iret
-
 ;-----------------------------------------------------------------------------
 ; The POLL exception handler
 ; It is called if POLL instruction gives an exception (not on V30MZ).
@@ -1231,6 +1434,66 @@ undefinedInstructionHandler:
 pollExceptionHandler:
 	mov byte [es:testedException], 7
 	iret
+
+;-----------------------------------------------------------------------------
+; The HBlank Timer handler
+;-----------------------------------------------------------------------------
+hblankTimerHandler:
+	push ax
+	mov ax, [es:hblankTimerIrqCount]
+	inc ax
+	mov [es:hblankTimerIrqCount], ax
+	cmp ax, 2
+	js hblankCont
+	; Acknowledge HBlank interrupt
+	mov al, INT_HBLANK_TIMER 
+	out INT_CAUSE_CLEAR, al
+hblankCont:
+	pop ax
+	iret
+;-----------------------------------------------------------------------------
+; The VBlank handler
+;-----------------------------------------------------------------------------
+vblankHandler:
+	inc word[es:vblankIrqCount]
+	iret
+;-----------------------------------------------------------------------------
+; The VBlank Timer handler
+;-----------------------------------------------------------------------------
+vblankTimerHandler:
+	inc word[es:vblankTimerIrqCount]
+	iret
+;-----------------------------------------------------------------------------
+; The Line Compare handler
+;-----------------------------------------------------------------------------
+lineCompareHandler:
+	inc word[es:lineCompareIrqCount]
+	iret
+;-----------------------------------------------------------------------------
+; The Serial Receive handler
+;-----------------------------------------------------------------------------
+serialReceiveHandler:
+	inc word[es:serialReceiveIrqCount]
+	iret
+;-----------------------------------------------------------------------------
+; The Cartridge Irq handler
+;-----------------------------------------------------------------------------
+cartridgeIrqHandler:
+	inc word[es:cartridgeIrqCount]
+	iret
+;-----------------------------------------------------------------------------
+; The Key Press handler
+;-----------------------------------------------------------------------------
+keyPressHandler:
+	inc word[es:keyPressIrqCount]
+	iret
+;-----------------------------------------------------------------------------
+; The Serial Transmit handler
+;-----------------------------------------------------------------------------
+serialTransmitHandler:
+	inc word[es:serialTransmitIrqCount]
+	iret
+
 ;-----------------------------------------------------------------------------
 ; Write a char to background. al = char
 ;-----------------------------------------------------------------------------
@@ -1366,15 +1629,23 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20230129",10 , 0
+headLineStr: db " WonderSwan HW Test 20230201",10 , 0
 
 menuTestAllStr: db "  Test All.",10 , 0
-menuTestLogicStr: db "  Test Logic.",10 , 0
+menuTestInterruptStr: db "  Test Interrupt Manager.",10 , 0
 menuTestArithmeticStr: db "  Test Arithmetic.",10 , 0
 menuTestRolShiftStr: db "  Test Rol & Shift.",10 , 0
 menuTestMiscStr: db "  Test Misc.",10 , 0
 
-testingEquStr: db "Equal by CMP, SUB & XOR", 10, 0
+testingIrqStr: db "Interrupt Manager", 10, 0
+testingIrq0Str: db "IRQs not set when disabled:", 10, 0
+testingIrq1Str: db "IRQs set when enabled:", 10, 0
+testingIrq2Str: db "IRQs latched when disabled:", 10, 0
+testingIrq3Str: db "IRQs cleared when acked:", 10, 0
+testingIrq4Str: db "IRQs happen after waiting:", 10, 0
+testingIrq5Str: db "IRQs happen when disabled:", 10, 0
+testingIrq6Str: db "No IRQs after acknowledged:", 10, 0
+testingIrq7Str: db "Multiple IRQs without ack:", 10, 0
 
 testingAdd8Str: db "ADD bytes", 10, 0
 
@@ -1420,8 +1691,19 @@ menuYPos: resb 1
 keysHeld: resb 1
 keysDown: resb 1
 
+	align 2
 lfsr1: resw 1
 lfsr2: resw 1
+
+nmiIrqCount: resw 1
+hblankTimerIrqCount: resw 1
+vblankIrqCount: resw 1
+vblankTimerIrqCount: resw 1
+lineCompareIrqCount: resw 1
+serialReceiveIrqCount: resw 1
+cartridgeIrqCount: resw 1
+keyPressIrqCount: resw 1
+serialTransmitIrqCount: resw 1
 
 inputVal1: resw 1
 inputVal2: resw 1
@@ -1432,7 +1714,7 @@ inputCarry: resw 1
 testedResult1: resw 1
 testedResult2: resw 1
 testedFlags: resw 1
-testedException: resw 1		; If a (division) exception occurred.
+testedException: resw 1		; If an exception occurred.
 
 expectedResult1: resw 1
 expectedResult2: resw 1
