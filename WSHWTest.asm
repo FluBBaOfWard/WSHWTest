@@ -28,6 +28,8 @@ SECTION .data
 	PSR_Z equ 0x40
 	PSR_P equ 0x04
 
+	MENU_ENTRIES equ 2
+
 SECTION .text
 	;PADDING 15
 
@@ -237,11 +239,7 @@ main:
 	call writeString
 	mov si, menuTestInterruptStr
 	call writeString
-	mov si, menuTestArithmeticStr
-	call writeString
-	mov si, menuTestRolShiftStr
-	call writeString
-	mov si, menuTestMiscStr
+	mov si, menuTestTimersStr
 	call writeString
 
 	; Turn on display
@@ -297,9 +295,9 @@ dontMoveUp:
 	test bl, (PAD_DOWN<<4)
 	jz dontMoveDown
 	add cl, 1
-	cmp cl, 4			; Entry count
+	cmp cl, MENU_ENTRIES
 	js dontMoveDown
-	mov cl, 4			; Entry count
+	mov cl, MENU_ENTRIES
 dontMoveDown:
 	mov [es:menuYPos], cl
 
@@ -327,13 +325,9 @@ dontMoveDown:
 	cmp cl, 0
 	jz testAll
 	cmp cl, 1
-	jz testLogic
+	jz testInterrupt
 	cmp cl, 2
-	jz testArithmetic
-	cmp cl, 3
-	jz testRolShift
-	cmp cl, 4
-	jz testMisc
+	jz testTimers
 	; No input, restart main loop
 	jmp mainLoop
 ;-----------------------------------------------------------------------------
@@ -343,37 +337,23 @@ dontMoveDown:
 ;-----------------------------------------------------------------------------
 testAll:
 	call testIrq
-	call testAdd8
-	call testRol8
-	call testDaa
+	call testHBlankTimer
+	call testVBlankTimer
 
 	call checkKeyInput
 	jmp main
 
 ;-----------------------------------------------------------------------------
-testLogic:
+testInterrupt:
 	call testIrq
 
 	call checkKeyInput
 	jmp main
 
 ;-----------------------------------------------------------------------------
-testArithmetic:
-	call testAdd8
-
-	call checkKeyInput
-	jmp main
-
-;-----------------------------------------------------------------------------
-testRolShift:
-	call testRol8
-
-	call checkKeyInput
-	jmp main
-
-;-----------------------------------------------------------------------------
-testMisc:
-	call testDaa
+testTimers:
+	call testHBlankTimer
+	call testVBlankTimer
 
 	call checkKeyInput
 	jmp main
@@ -622,543 +602,191 @@ int7Fail:
 	xor ax, ax
 	ret
 
+;-----------------------------------------------------------------------------
+; Test Timers
+;-----------------------------------------------------------------------------
+testHBlankTimer:
+	mov si, testingTimerStr
+	call writeString
 
-	call printHexB
-	mov al, 10
-	int 0x10		; newline
+	mov si, testingTimer0Str
+	call writeString
 
-	; Disable serial
-	xor al, al
-	out IO_SERIAL_STATUS, al
+	mov byte [es:isTesting], 1
 
-	mov bl,40
-	call waitLine
-	mov bl,20
-	call waitLine
+	cli
 
 	; Disable all interrupts
 	xor al, al
 	out IO_INT_ENABLE, al
 
-	; Disable serial
-	xor al, al
-	out IO_SERIAL_STATUS, al
+	; Acknowledge all interrupts
+	dec al
+	out INT_CAUSE_CLEAR, al
 
-	mov bl,40
-	call waitLine
-	mov bl,20
+	mov bl, 20
 	call waitLine
 
-	in al, IO_INT_CAUSE
-	call printHexB
-	mov al, 10
-	int 0x10		; newline
-
-;----------------------------
-	; Disable serial
-	xor al, al
-	out IO_SERIAL_STATUS, al
-
-	; Clear HBL & Timers
-	xor ax, ax
+	; Setup HBL Timer
+	mov ax, 0
 	out IOw_H_BLANK_TIMER, ax
+	mov al, 0x03
 	out IO_TIMER_CTRL, al
 
-	sti
-	nop
-	cli
+	mov bl, 80
+	call waitLine
 
-	mov ax, [es:hblankTimerIrqCount]
-	call printHexW
-	mov al, 10
-	int 0x10		; newline
+	in ax, IOw_H_BLANK_COUNTER
+	xor ax, 0
+	mov si, failedStr
+	jnz timer0Fail
+	mov si, okStr
+timer0Fail:
+	call writeString
 
+;-----------------------------------------------------------------------------
+	mov si, testingTimer1Str
+	call writeString
 
-	; Acknowledge all interrupts
-	mov al, 0xFF
-	out INT_CAUSE_CLEAR, al
+	mov bl, 20
+	call waitLine
+
+	; Setup HBL Timer
+	mov al, 0x00
+	out IO_TIMER_CTRL, al
+	mov ax, 300
+	out IOw_H_BLANK_TIMER, ax
+
+	mov bl, 80
+	call waitLine
+
+	in ax, IOw_H_BLANK_COUNTER
+	cmp ax, 300
+	mov si, failedStr
+	jnz timer1Fail
+	mov si, okStr
+timer1Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingTimer2Str
+	call writeString
+
+	mov bl, 20
+	call waitLine
+
+	; Setup HBL Timer
+	mov ax, 300
+	out IOw_H_BLANK_TIMER, ax
+	mov al, 0x03
+	out IO_TIMER_CTRL, al
+
+	mov bl, 80
+	call waitLine
+
+	in ax, IOw_H_BLANK_COUNTER
+	cmp ax, 241
+	mov si, failedStr
+	jge timer2Fail
+	mov si, okStr
+timer2Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingTimer3Str
+	call writeString
+
+	mov bl, 20
+	call waitLine
+
+	; Setup HBL Timer
+	mov ax, 300
+	out IOw_H_BLANK_TIMER, ax
+	mov al, 0x01
+	out IO_TIMER_CTRL, al
+
+	mov bl, 80
+	call waitLine
+
+	in ax, IOw_H_BLANK_COUNTER
+	cmp ax, 241
+	mov si, failedStr
+	jge timer3Fail
+	mov si, okStr
+timer3Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingTimer4Str
+	call writeString
+
+	mov bl, 20
+	call waitLine
+
+	; Setup HBL Timer
+	mov ax, 300
+	out IOw_H_BLANK_TIMER, ax
+	mov al, 0x02
+	out IO_TIMER_CTRL, al
+
+	mov bl, 80
+	call waitLine
+
+	in ax, IOw_H_BLANK_COUNTER
+	cmp ax, 300
+	mov si, failedStr
+	jnz timer4Fail
+	mov si, okStr
+timer4Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingTimer5Str
+	call writeString
+
+	mov bl, 20
+	call waitLine
+
+	; Setup HBL Timer
+	mov ax, 300
+	out IOw_H_BLANK_TIMER, ax
+	mov al, 0x01
+	out IO_TIMER_CTRL, al
+
+	mov bl, 40
+	call waitLine
+
+	mov al, 0x00
+	out IO_TIMER_CTRL, al
+
+	mov bl, 60
+	call waitLine
+
+	mov al, 0x01
+	out IO_TIMER_CTRL, al
+
+	mov bl, 100
+	call waitLine
+
+	in ax, IOw_H_BLANK_COUNTER
+	cmp ax, 241
+	mov si, failedStr
+	jge timer5Fail
+	mov si, okStr
+timer5Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+testVBlankTimer:
 
 	; Enable VBL interrupt
 	mov al, INT_VBLANK_START 
 	out IO_INT_ENABLE, al
-	sti
 
 	mov byte [es:isTesting], 0
 	mov al, 10
 	int 0x10
-	mov si, okStr
-	call writeString
 	xor ax, ax
-	ret
-
-;-----------------------------------------------------------------------------
-; Test ADD for all bytes & bytes values.
-;-----------------------------------------------------------------------------
-testAdd8:
-	mov si, testingAdd8Str
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-
-	xor cx, cx
-	mov [es:expectedResult1], cx
-testAdd8Loop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], ch
-	call calcAdd8Result
-	call testAdd8Single
-	xor al, 0
-	jnz stopAdd8Test
-continueAdd8:
-	inc word [es:expectedResult1]
-	inc cl
-	jnz testAdd8Loop
-	mov word [es:expectedResult1], 0
-	inc ch
-	mov [es:expectedResult1], ch
-	jnz testAdd8Loop
-
-	hlt						; Wait for VBlank
-	mov byte [es:isTesting], 0
-	mov al, 10
-	int 0x10
-	mov si, okStr
-	call writeString
-	xor ax, ax
-	ret
-stopAdd8Test:
-	call checkKeyInput
-	xor al, 0
-	jnz continueAdd8
-	ret
-
-;-----------------------------------------------------------------------------
-testAdd8Single:
-	push bx
-	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-
-	mov cl, [es:inputVal1]
-	mov bl, [es:inputVal2]
-	popf
-	add bl, cl
-	pushf
-
-	mov [es:testedResult1], bl
-	pop cx
-	mov [es:testedFlags], cx
-	mov al, [es:expectedResult1]
-	xor al, bl
-	jnz add8Failed
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	jnz add8Failed
-
-	pushf
-	pop bx
-	or bx, 0x78FF
-	push bx
-	mov [es:inputFlags], bx
-
-	mov cl, [es:inputVal1]
-	mov al, [es:inputVal2]
-	popf
-	add al, cl
-	pushf
-
-	mov [es:testedResult1], al
-	pop cx
-	mov [es:testedFlags], cx
-	mov bl, [es:expectedResult1]
-	xor al, bl
-	jnz add8Failed
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	jnz add8Failed
-
-	xor ax, ax
-	pop cx
-	pop bx
-	ret
-
-add8Failed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-;-----------------------------------------------------------------------------
-calcAdd8Result:
-	push bx
-	push cx
-
-	mov bl, [es:inputVal1]
-	mov al, [es:inputVal2]
-	xor bl, al
-
-	mov ax, [es:expectedResult1]
-	xor bl, al
-	mov cx, 0xF202
-	test ah, 1
-	jz add8NoC
-	or cx, 0x801
-add8NoC:
-	test bl, 0x80
-	jz add8NoOv
-	xor ch, 0x08
-add8NoOv:
-	test bl, 0x10
-	jz add8NoAC
-	or cl, 0x10
-add8NoAC:
-	lea bx, PZSTable
-	xlat
-	or cl, al
-	mov [es:expectedFlags], cx
-	pop cx
-	pop bx
-	ret
-
-;-----------------------------------------------------------------------------
-; Test ROL for all byte & 5bit values.
-;-----------------------------------------------------------------------------
-testRol8:
-	mov si, testingRol8Str
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-
-	xor cx, cx
-testRol8Loop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], ch
-	call calcRol8Result
-	call testRol8Single
-	xor al, 0
-	jnz stopRol8Test
-continueRol8:
-	inc cx
-	jnz testRol8Loop
-
-	hlt						; Wait for VBlank
-	mov byte [es:isTesting], 0
-	mov al, 10
-	int 0x10
-	mov si, okStr
-	call writeString
-	xor ax, ax
-	ret
-stopRol8Test:
-	call checkKeyInput
-	xor al, 0
-	jnz continueRol8
-	ret
-
-;-----------------------------------------------------------------------------
-testRol8Single:
-	push bx
-	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-
-	mov cl, [es:inputVal1]
-	mov bl, [es:inputVal2]
-	mov al, cl
-	and al, 0x1F
-	jnz rol8Normal
-	test bl, 0x80
-	jz rol8Normal
-	or word [es:expectedFlags], 0x0800
-rol8Normal:
-
-	popf
-	rol bl, cl
-	pushf
-
-	mov [es:testedResult1], bl
-	pop cx
-	mov [es:testedFlags], cx
-	mov al, [es:expectedResult1]
-	xor al, bl
-	jnz rol8Failed
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	jnz rol8Failed
-
-	mov cl, [es:inputVal1]
-	mov al, cl
-	and al, 0xE0
-	pushf
-	pop bx
-	or bx, 0x78FF
-	cmp al, 0x20
-	jnz rol8NormalC2
-	and bx, 0xFFFE
-rol8NormalC2:
-	cmp al, 0x30
-	jnz rol8NormalV2
-	and bx, 0xF7FF
-rol8NormalV2:
-	push bx
-	mov [es:inputFlags], bx
-
-	mov al, [es:inputVal2]
-	or byte [es:expectedFlags], 0xD4
-	mov ah, cl
-	and ah, 0x1F
-	jnz rol8Normal2
-	and word [es:expectedFlags], 0xF7FF
-	and bx, 0x0001
-	jz rol8NormalC3
-	or bx, 0x0800
-rol8NormalC3:
-	or [es:expectedFlags], bx
-	test al, 0x80
-	jz rol8Normal2
-	xor word [es:expectedFlags], 0x0800
-rol8Normal2:
-	popf
-	rol al, cl
-	pushf
-
-	mov [es:testedResult1], al
-	pop cx
-	mov [es:testedFlags], cx
-	mov bl, [es:expectedResult1]
-	xor al, bl
-	jnz rol8Failed
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	jnz rol8Failed
-
-	xor ax, ax
-	pop cx
-	pop bx
-	ret
-
-rol8Failed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-;-----------------------------------------------------------------------------
-calcRol8Result:
-	push bx
-	push cx
-
-	mov cx, 0xF202
-	mov bl, [es:inputVal1]
-	mov al, [es:inputVal2]
-	and bl, 0x1F
-	jz rol8NoOv
-rol8Loop:
-	add al, al
-	jnc rol8NoC
-	or al, 0x01
-rol8NoC:
-	dec bl
-	jnz rol8Loop
-
-rol8SetRes:
-	mov ah, al
-	test ah, 0x01
-	jz rol8NoCy
-	or cl, 0x01
-	xor ah, 0x80
-rol8NoCy:
-	test ah, 0x80
-	jz rol8NoOv
-	or ch, 0x08
-rol8NoOv:
-	mov [es:expectedResult1], al
-	mov [es:expectedFlags], cx
-	pop cx
-	pop bx
-	ret
-
-;-----------------------------------------------------------------------------
-; Test Decimal Adjust after Addition of all byte values & AC + CY.
-;-----------------------------------------------------------------------------
-testDaa:
-	mov si, testingDaaStr
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-
-	xor cx, cx
-testDaaLoop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], ch
-	call calcDaaResult
-	call testDaaSingle
-	xor al, 0
-	jnz stopDaaTest
-continueDaa:
-	inc cx
-	cmp cx, 0x400
-	jnz testDaaLoop
-
-	hlt						; Wait for VBlank
-	mov byte [es:isTesting], 0
-	mov al, 10
-	int 0x10
-	mov si, okStr
-	call writeString
-	xor ax, ax
-	ret
-stopDaaTest:
-	call checkKeyInput
-	xor al, 0
-	jnz continueDaa
-	ret
-
-;-----------------------------------------------------------------------------
-testDaaSingle:
-	push bx
-	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	mov bl, [es:inputVal2]
-	test bl, 1
-	jz daaTestNoCY
-	or al, 0x01
-daaTestNoCY:
-	test bl, 2
-	jz daaTestNoAC
-	or al, 0x10
-daaTestNoAC:
-	push ax
-	mov [es:inputFlags], ax
-
-	mov al, [es:inputVal1]
-	mov ah, al
-	xor ah, 0xa5
-
-	popf
-	daa
-	pushf
-
-	mov [es:testedResult1], ax
-	pop cx
-	mov [es:testedFlags], cx
-	mov bx, [es:expectedResult1]
-	xor ax, bx
-	jnz daaFailed
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	jnz daaFailed
-
-	pushf
-	pop ax
-	xor al, al
-	or ax, 0x78EE
-	mov bl, [es:inputVal2]
-	test bl, 1
-	jz daaTest2NoCY
-	or al, 0x01
-daaTest2NoCY:
-	test bl, 2
-	jz daaTest2NoAC
-	or al, 0x10
-daaTest2NoAC:
-	push ax
-	mov [es:inputFlags], ax
-
-	mov al, [es:inputVal1]
-	mov ah, al
-	xor ah, 0xa5
-	popf
-	daa
-	pushf
-
-	mov [es:testedResult1], ax
-	pop cx
-	mov [es:testedFlags], cx
-	mov bx, [es:expectedResult1]
-	xor ax, bx
-	jnz daaFailed
-	mov bx, [es:expectedFlags]
-	xor cx, bx
-	jnz daaFailed
-
-	xor ax, ax
-	pop cx
-	pop bx
-	ret
-
-daaFailed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-;-----------------------------------------------------------------------------
-calcDaaResult:
-	push bx
-	push dx
-
-	mov al, [es:inputVal1]
-	mov bl, [es:inputVal2]
-	mov ah, al
-	mov bh, al
-	shl bh, 4
-
-	cmp al, 0x9A
-	jc daaNoCY
-	or bl, 1
-daaNoCY:
-	test bl, 1
-	jz daaNoHighAdd
-	add al, 0x60
-daaNoHighAdd:
-	cmp bh, 0xA0
-	jc daaNoAC
-	or bl, 2
-daaNoAC:
-	test bl, 2
-	jz daaNoLowAdd
-	add al, 0x06
-daaNoLowAdd:
-daaSetRes:
-	mov dx, 0xF202				; Expected flags
-	test bl, 1
-	jz daaSkipCY
-	or dl, 0x01
-daaSkipCY:
-	test bl, 2
-	jz daaSkipAC
-	or dl, 0x10
-daaSkipAC:
-	cmp al, ah
-	jno daaSkipOV
-	or dx, 0x800
-daaSkipOV:
-	xor ah, 0xA5
-	mov [es:expectedResult1], ax
-	lea bx, PZSTable
-	xlat				; Fetch Sign, Zero & Parity
-	or dl, al
-	mov [es:expectedFlags], dx
-	pop dx
-	pop bx
 	ret
 
 ;-----------------------------------------------------------------------------
@@ -1547,24 +1175,6 @@ endOutput:
 
 	align 2
 
-PZSTable:
-	db PSR_Z|PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0, 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P
-	db 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P, PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0
-	db 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P, PSR_P, 0, 0 ,PSR_P, 0, PSR_P, PSR_P, 0
-	db PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0, 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P
-	db 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P, PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0
-	db PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0, 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P
-	db PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0, 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P
-	db 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P, PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0
-	db PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S
-	db PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S
-	db PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S
-	db PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S
-	db PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S
-	db PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S
-	db PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S
-	db PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S
-
 FontTilePalette:
 	dw 0xFFF, 0x000
 
@@ -1629,11 +1239,11 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20230201",10 , 0
+headLineStr: db " WonderSwan HW Test 20230202",10 , 0
 
 menuTestAllStr: db "  Test All.",10 , 0
 menuTestInterruptStr: db "  Test Interrupt Manager.",10 , 0
-menuTestArithmeticStr: db "  Test Arithmetic.",10 , 0
+menuTestTimersStr: db "  Test Timers.",10 , 0
 menuTestRolShiftStr: db "  Test Rol & Shift.",10 , 0
 menuTestMiscStr: db "  Test Misc.",10 , 0
 
@@ -1647,7 +1257,13 @@ testingIrq5Str: db "IRQs happen when disabled:", 10, 0
 testingIrq6Str: db "No IRQs after acknowledged:", 10, 0
 testingIrq7Str: db "Multiple IRQs without ack:", 10, 0
 
-testingAdd8Str: db "ADD bytes", 10, 0
+testingTimerStr: db "Timers", 10, 0
+testingTimer0Str: db "Timers dont run when zero:", 10, 0
+testingTimer1Str: db "Timers dont run when off:", 10, 0
+testingTimer2Str: db "Timers run when on+repeat:", 10, 0
+testingTimer3Str: db "Timers run when on+one shot:", 0
+testingTimer4Str: db "Timers dont run, off+repeat:", 0
+testingTimer5Str: db "Timers continue by on/off:", 10, 0
 
 testingRol8Str: db "ROL byte by CL", 10, 0
 

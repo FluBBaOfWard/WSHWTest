@@ -11,3 +11,7 @@ The interrupt manager latches all enabled incoming interrupt requests until they
 All interrupts that are latched and visible in 0xB4 also cause interrupts if/when the cpu is able to accept them.
 
 The interrupt pin on the cpu is enabled as long as there are bits set in 0xB4, the interrupt manager allways sends the vector for the top enabled bit.
+
+## Timers
+
+The
