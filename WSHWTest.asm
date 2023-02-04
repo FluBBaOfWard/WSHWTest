@@ -756,12 +756,14 @@ timer4Fail:
 	mov bl, 40
 	call waitLine
 
-	mov al, 0x00
+	; Turn off timer
+	xor al, al
 	out IO_TIMER_CTRL, al
 
 	mov bl, 60
 	call waitLine
 
+	; Turn it on again
 	mov al, 0x01
 	out IO_TIMER_CTRL, al
 
@@ -769,11 +771,46 @@ timer4Fail:
 	call waitLine
 
 	in ax, IOw_H_BLANK_COUNTER
-	cmp ax, 241
+	cmp ax, 239
 	mov si, failedStr
-	jge timer5Fail
+	jl timer5Fail
 	mov si, okStr
 timer5Fail:
+	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingTimer6Str
+	call writeString
+
+	; Turn off timer
+	xor al, al
+	out IO_TIMER_CTRL, al
+
+	; Acknowledge HBl interrupt
+	mov al, INT_HBLANK_TIMER
+	out INT_CAUSE_CLEAR, al
+
+	; Enable HBl interrupt
+	mov al, INT_HBLANK_TIMER
+	out IO_INT_ENABLE, al
+
+	mov bl, 20
+	call waitLine
+
+	; Setup HBL Timer
+	mov ax, 1
+	out IOw_H_BLANK_TIMER, ax
+
+	mov bl, 22
+	call waitLine
+
+
+	in al, IO_INT_CAUSE
+	xor al, INT_HBLANK_TIMER
+	mov si, failedStr
+	jnz timer6Fail
+	mov si, okStr
+timer6Fail:
 	call writeString
 
 ;-----------------------------------------------------------------------------
@@ -1239,7 +1276,7 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20230202",10 , 0
+headLineStr: db " WonderSwan HW Test 20230204",10 , 0
 
 menuTestAllStr: db "  Test All.",10 , 0
 menuTestInterruptStr: db "  Test Interrupt Manager.",10 , 0
@@ -1264,6 +1301,7 @@ testingTimer2Str: db "Timers run when on+repeat:", 10, 0
 testingTimer3Str: db "Timers run when on+one shot:", 0
 testingTimer4Str: db "Timers dont run, off+repeat:", 0
 testingTimer5Str: db "Timers continue by on/off:", 10, 0
+testingTimer6Str: db "Timers always fire when c 1:", 0
 
 testingRol8Str: db "ROL byte by CL", 10, 0
 

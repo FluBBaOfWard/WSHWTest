@@ -1,6 +1,7 @@
-# WSHWTest
+# WSHWTest V0.1.0 (20230204)
 
 Hardware test suite for WonderSwan
+These descriptions are my interpretation of what is happening, that doesn't mean this is actualy what is happening, I'm open to pull requests for both code and interpretations of how things work.
 
 ## Interrupts
 
@@ -14,4 +15,12 @@ The interrupt pin on the cpu is enabled as long as there are bits set in 0xB4, t
 
 ## Timers
 
-The
+The timer logic is a bit backwards, the on/off bit is used to write back the downcounted value, the downcount always happens, this means that if the timer is off and the counter value is 1 an interrupt will happen but zero is not written back to the counter so it's basicly the same as timer on with repeat.
+Writing to the timer values instantly updates the counter value.
+Toggling the Timer on/off doesn't reload the counter value, it just pauses / resumes the counter.
+
+So what happens is:
+1 Check if counter is zero, if so stop doing anything more.
+2 Count down counter, if it's now zero tell the interrupt manager.
+3 If counted down value was zero, check repeat bit and fetch timer value.
+4 Is Timer on? Write back downcounted/timer value to counter.
