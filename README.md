@@ -20,7 +20,8 @@ Writing to the timer values instantly updates the counter value.
 Toggling the Timer on/off doesn't reload the counter value, it just pauses / resumes the counter.
 
 So what happens is:
-1 Check if counter is zero, if so stop doing anything more.
-2 Count down counter, if it's now zero tell the interrupt manager.
-3 If counted down value was zero, check repeat bit and fetch timer value.
-4 Is Timer on? Write back downcounted/timer value to counter.
+
+1. Check if counter is zero, if so stop doing anything more.
+2. Count down counter, if it's now zero tell the interrupt manager.
+3. If counted down value was zero, check repeat bit and fetch timer value.
+4. Is Timer on? Write back downcounted/timer value to counter.
