@@ -592,6 +592,36 @@ int6Fail:
 	jnz int7Fail
 	mov si, okStr
 int7Fail:
+;	call writeString
+
+;-----------------------------------------------------------------------------
+	mov si, testingIrq2Str
+	call writeString
+
+	mov bl,20
+	call waitLine
+
+	; Enable serial
+	mov al, COMM_ENABLE | COMM_SPEED_38400 | COMM_OVERRUN_RESET
+	out IO_SERIAL_STATUS, al
+
+	; Only enable serial receive interrupt
+	mov al, INT_SERIAL_SEND
+	out IO_INT_ENABLE, al
+
+	; Acknowledge all interrupts
+	mov al, 0xFF
+	out INT_CAUSE_CLEAR, al
+
+	mov bl,22
+	call waitLine
+
+	in al, IO_INT_CAUSE
+	xor al, 0
+	mov si, failedStr
+	jnz int8Fail
+	mov si, okStr
+int8Fail:
 	call writeString
 
 ;-----------------------------------------------------------------------------
