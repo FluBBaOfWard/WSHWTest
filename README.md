@@ -1,4 +1,4 @@
-# WSHWTest V0.1.0 (20230204)
+# WSHWTest V0.1.0 (20230810)
 
 Hardware test suite for WonderSwan
 These descriptions are my interpretation of what is happening, that doesn't mean this is actualy what is happening, I'm open to pull requests for both code and interpretations of how things work.
@@ -11,7 +11,7 @@ The interrupt manager latches all enabled incoming interrupt requests until they
 
 All interrupts that are latched and visible in 0xB4 also cause interrupts if/when the cpu is able to accept them.
 
-The interrupt pin on the cpu is enabled as long as there are bits set in 0xB4, the interrupt manager allways sends the vector for the top enabled bit.
+The interrupt pin on the cpu is enabled as long as there are bits set in 0xB4, the interrupt manager allways sends the vector for the top enabled interrupt.
 
 ## Timers
 

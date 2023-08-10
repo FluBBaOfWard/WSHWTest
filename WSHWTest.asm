@@ -28,7 +28,7 @@ SECTION .data
 	PSR_Z equ 0x40
 	PSR_P equ 0x04
 
-	MENU_ENTRIES equ 2
+	MENU_ENTRIES equ 3
 
 SECTION .text
 	;PADDING 15
@@ -125,7 +125,6 @@ initialize:
 	mov word [es:di], outputCharHandler
 	mov word [es:di + 2], MYSEGMENT
 
-
 	mov ax, INT_BASE	; 0x20
 	out IO_INT_VECTOR, al
 
@@ -189,7 +188,7 @@ initialize:
 	out INT_CAUSE_CLEAR, al
 
 	; Enable VBL interrupt
-	mov al, INT_VBLANK_START 
+	mov al, INT_VBLANK_START
 	out IO_INT_ENABLE, al
 
 	; We have finished initializing, interrupts can now fire again
@@ -206,8 +205,7 @@ initialize:
 monoFontLoop:
 	lodsb
 	stosw
-	dec cx
-	jnz monoFontLoop
+	loop monoFontLoop
 
 ;-----------------------------------------------------------------------------
 ; Copy font palette into WSC's palette area
@@ -220,10 +218,16 @@ monoFontLoop:
 	mov cx, 2
 	rep movsw
 
-	mov al, 0xf0
-	out IO_LCD_GRAY_01, al
+	mov ax, 0x7f0
+	out IO_LCD_GRAY_01, ax
 	mov ax, 0x0010
 	out IOw_SCR_LUT_0, ax
+	mov ax, 0x0020
+	out IOw_SCR_LUT_1, ax
+	mov ax, 0x0000
+	out IOw_SCR_LUT_2, ax
+	mov ax, 0x0000
+	out IOw_SCR_LUT_4, ax
 
 ;-----------------------------------------------------------------------------
 ; Make background map point to our tiles, essentially "painting" the
@@ -231,6 +235,7 @@ monoFontLoop:
 ;-----------------------------------------------------------------------------
 main:
 	call clearScreen
+	call clearForegroundMap
 
 	mov si, headLineStr
 	call writeString
@@ -240,6 +245,8 @@ main:
 	mov si, menuTestInterruptStr
 	call writeString
 	mov si, menuTestTimersStr
+	call writeString
+	mov si, menuTestWindowsStr
 	call writeString
 
 	; Turn on display
@@ -328,6 +335,8 @@ dontMoveDown:
 	jz testInterrupt
 	cmp cl, 2
 	jz testTimers
+	cmp cl, 3
+	jz testWindows
 	; No input, restart main loop
 	jmp mainLoop
 ;-----------------------------------------------------------------------------
@@ -354,6 +363,13 @@ testInterrupt:
 testTimers:
 	call testHBlankTimer
 	call testVBlankTimer
+
+	call checkKeyInput
+	jmp main
+
+;-----------------------------------------------------------------------------
+testWindows:
+	call testHorizontalWindows
 
 	call checkKeyInput
 	jmp main
@@ -592,10 +608,10 @@ int6Fail:
 	jnz int7Fail
 	mov si, okStr
 int7Fail:
-;	call writeString
+	call writeString
 
 ;-----------------------------------------------------------------------------
-	mov si, testingIrq2Str
+	mov si, testingIrq8Str
 	call writeString
 
 	mov bl,20
@@ -606,7 +622,7 @@ int7Fail:
 	out IO_SERIAL_STATUS, al
 
 	; Only enable serial receive interrupt
-	mov al, INT_SERIAL_SEND
+	mov al, INT_SERIAL_RECEIVE
 	out IO_INT_ENABLE, al
 
 	; Acknowledge all interrupts
@@ -623,12 +639,12 @@ int7Fail:
 	mov si, okStr
 int8Fail:
 	call writeString
-
+	sti
 ;-----------------------------------------------------------------------------
-
+	; Enable VBL interrupt
+	mov al, INT_VBLANK_START 
+	out IO_INT_ENABLE, al
 	mov byte [es:isTesting], 0
-	mov al, 10
-	int 0x10
 	xor ax, ax
 	ret
 
@@ -857,6 +873,99 @@ testVBlankTimer:
 	ret
 
 ;-----------------------------------------------------------------------------
+testHorizontalWindows:
+
+	; Turn on display
+	mov al, BG_ON | FG_ON | FG_WIN_ON
+	out IO_DISPLAY_CTRL, al
+
+	mov di, backgroundMap + ((4 * MAP_TWIDTH) + 13) * 2
+	mov ax, BG_CHR( 0x7F, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+	stosw
+
+	mov di, backgroundMap + ((5 * MAP_TWIDTH) + 12) * 2
+	mov ax, BG_CHR( 0x7F, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+	stosw
+	stosw
+	stosw
+
+	mov di, foregroundMap + ((3 * MAP_TWIDTH) + 12) * 2
+	mov ax, BG_CHR( 0x7F, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+	stosw
+	stosw
+	stosw
+
+	mov di, foregroundMap + ((4 * MAP_TWIDTH) + 12) * 2
+	mov ax, BG_CHR( 0x7F, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+	mov ax, BG_CHR( 0x7F, 1, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+	stosw
+	mov ax, BG_CHR( 0x7F, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+
+	mov di, foregroundMap + ((5 * MAP_TWIDTH) + 12) * 2
+	mov ax, BG_CHR( 0x7F, 2, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+	mov ax, BG_CHR( 0x7F, 1, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+	stosw
+	mov ax, BG_CHR( 0x7F, 2, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+
+	mov di, foregroundMap + ((6 * MAP_TWIDTH) + 12) * 2
+	mov ax, BG_CHR( 0x7F, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	stosw
+	stosw
+	stosw
+	stosw
+
+winTestLoop:
+	mov ax, 0x4428
+	out IO_SCR2_WIN_X1, ax
+	mov ax, 0x47A7
+	out IO_SCR2_WIN_X2, ax
+
+.waitLine31:
+	in al, IO_LCD_LINE
+	cmp al, 31
+	jne .waitLine31
+
+	mov ax, 0x1068
+	out IO_SCR2_WIN_X1, ax
+	mov ax, 0x4777
+	out IO_SCR2_WIN_X2, ax
+
+.waitLine39:
+	in al, IO_LCD_LINE
+	cmp al, 39
+	jne .waitLine39
+
+	mov al, 0x60
+	out IO_SCR2_WIN_X1, al
+	mov al, 0x7F
+	out IO_SCR2_WIN_X2, al
+
+.waitLine47:
+	in al, IO_LCD_LINE
+	cmp al, 47
+	jne .waitLine47
+
+	mov ax, 0x3868
+	out IO_SCR2_WIN_X1, ax
+	mov ax, 0x2F77
+	out IO_SCR2_WIN_X2, ax
+
+	hlt
+	jmp winTestLoop
+
+	mov byte [es:isTesting], 0
+	xor ax, ax
+	ret
+;-----------------------------------------------------------------------------
 ; Wait for input, A continue, B cancel.
 ;-----------------------------------------------------------------------------
 checkKeyInput:
@@ -867,16 +976,12 @@ checkKeyInput:
 keyLoop:
 	hlt
 	in al, IO_KEYPAD
-	test al, PAD_A
-	jnz keyContinue
-	test al, PAD_B
-	jnz keyCancel
-	jmp keyLoop
-keyContinue:
+	test al, PAD_A | PAD_B
+	jz keyLoop
+	and al, PAD_A
+	jz keyCancel
 	mov al, 1
-	ret
 keyCancel:
-	xor al, al
 	ret
 ;-----------------------------------------------------------------------------
 ; Gets the next number from LFSR1 in AX
@@ -987,8 +1092,14 @@ clearLine:
 ; Clear foreground tilemap.
 ;-----------------------------------------------------------------------------
 clearForegroundMap:
+	push cx
 	mov di, foregroundMap
-	jmp clearTileMap
+	; Clear a tilemap by writing space (0x20) to all locations.
+	mov ax, BG_CHR( ' ', 4, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	mov cx, MAP_TWIDTH * SCREEN_THEIGHT
+	rep stosw
+	pop cx
+	ret
 ;-----------------------------------------------------------------------------
 ; Clear background tilemap.
 ;-----------------------------------------------------------------------------
@@ -1015,8 +1126,7 @@ textLoop:
 	int 0x10
 	xor al, 0
 	jz endString
-	dec cx
-	jnz textLoop
+	loop textLoop
 endString:
 	ret
 
@@ -1053,7 +1163,7 @@ vblankInterruptHandler:
 
 	; globalFrameCounter++
 	inc word [es:globalFrameCounter]
-	inc word[es:vblankIrqCount]
+	inc word [es:vblankIrqCount]
 
 	mov ax, [es:bgPos]
 	out IO_SCR1_SCRL_X, ax
@@ -1197,21 +1307,20 @@ outputCharHandler:
 	push cx
 	push di
 
+	cmp al, 10
+	jz newLine
+	mov cl, [es:cursorXPos]
+	xor al, 0
+	jz endOutput
 	xor bh, bh
 	mov bl, [es:cursorYPos]
 	and bl, 0x1F
-	shl bx, 5		; ax * MAP_TWIDTH
-	mov cl, [es:cursorXPos]
+	shl bx, 5		; bx * MAP_TWIDTH
 	add bl, cl
 	shl bx, 1
 	mov di, backgroundMap
 	add di, bx
-	xor al, 0
-	jz endOutput
-	cmp al, 10
-	jz newLine
 	stosb
-	inc di
 	inc cl
 	cmp cl, 28
 	jnz endOutput
@@ -1219,7 +1328,7 @@ newLine:
 	mov bl, [es:cursorYPos]
 	inc bl
 	mov al, bl
-	sub al, SCREEN_THEIGHT-1
+	sub al, SCREEN_THEIGHT
 	jle notAtEnd
 	and bl, 0x1F
 	or bl, 0x40
@@ -1298,7 +1407,7 @@ MonoFont:
 	db 0x00,0x00,0x42,0x24,0x18,0x24,0x42,0x00,0x00,0x00,0x42,0x42,0x3E,0x02,0x7C,0x00
 	db 0x00,0x00,0x7E,0x02,0x3C,0x40,0x7E,0x00,0x08,0x10,0x10,0x20,0x10,0x10,0x08,0x00
 	db 0x10,0x10,0x10,0x00,0x10,0x10,0x10,0x00,0x20,0x10,0x10,0x08,0x10,0x10,0x20,0x00
-	db 0x00,0x00,0x60,0x92,0x0C,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+	db 0x00,0x00,0x60,0x92,0x0C,0x00,0x00,0x00,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF
 
 prepareData:
 	dw 0xF0AB, 0x570D
@@ -1306,11 +1415,12 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20230204",10 , 0
+headLineStr: db " WonderSwan HW Test 20230810",10 , 0
 
 menuTestAllStr: db "  Test All.",10 , 0
 menuTestInterruptStr: db "  Test Interrupt Manager.",10 , 0
 menuTestTimersStr: db "  Test Timers.",10 , 0
+menuTestWindowsStr: db "  Test Windows.",10 , 0
 menuTestRolShiftStr: db "  Test Rol & Shift.",10 , 0
 menuTestMiscStr: db "  Test Misc.",10 , 0
 
@@ -1323,6 +1433,7 @@ testingIrq4Str: db "IRQs happen after waiting:", 10, 0
 testingIrq5Str: db "IRQs happen when disabled:", 10, 0
 testingIrq6Str: db "No IRQs after acknowledged:", 10, 0
 testingIrq7Str: db "Multiple IRQs without ack:", 10, 0
+testingIrq8Str: db "Serial IRQ test:", 10, 0
 
 testingTimerStr: db "Timers", 10, 0
 testingTimer0Str: db "Timers dont run when zero:", 10, 0
@@ -1332,10 +1443,6 @@ testingTimer3Str: db "Timers run when on+one shot:", 0
 testingTimer4Str: db "Timers dont run, off+repeat:", 0
 testingTimer5Str: db "Timers continue by on/off:", 10, 0
 testingTimer6Str: db "Timers always fire when c 1:", 0
-
-testingRol8Str: db "ROL byte by CL", 10, 0
-
-testingDaaStr: db "DAA/ADJ4A", 10, 0
 
 test8InputStr: db "Testing Input: 0x00", 0
 test16InputStr: db "Testing Input: 0x0000", 0

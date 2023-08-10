@@ -125,9 +125,9 @@ SPR_ON			equ	0x04
 SPR_OFF			equ	0x00
 SPR_WIN_ON		equ	0x08
 SPR_WIN_OFF		equ	0x00
-FG_IN_OUT_WIN	equ	0x00
-FG_IN_WIN		equ	0x10
-FG_OUT_WIN		equ	0x30
+FG_WIN_ON		equ	0x20
+FG_WIN_IN		equ	0x00
+FG_WIN_OUT		equ	0x10
 
 IO_BG_PAL		equ	0x01
 %define	BG_COLOR(a)	(a)
@@ -160,7 +160,7 @@ IO_SCR1_SCRL_X	equ	0x10
 IO_SCR1_SCRL_Y	equ	0x11
 
 IO_SCR2_SCRL_X	equ	0x12
-IO_SCR2_SCRL_XY	equ	0x13
+IO_SCR2_SCRL_Y	equ	0x13
 
 IO_LCD_IF_CTRL	equ	0x14
 LCD_ON			equ	0x01
