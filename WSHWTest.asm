@@ -28,14 +28,37 @@ SECTION .data
 	PSR_Z equ 0x40
 	PSR_P equ 0x04
 
-	MENU_ENTRIES equ 3
+	MENU_ENTRIES equ 5
 
 SECTION .text
 	;PADDING 15
 
 initialize:
+	xor ax, ax
+	mov ss, ax			; Set SS segment to 0x0000 (RAM).
+	mov [ss:startRegSP], sp
+	mov sp, 0x2000
+	pushf
 	cli
 	cld
+	pop ax
+	mov [ss:startRegF], ax
+;	mov [ss:startRegAW], ax
+	mov [ss:startRegCW], cx
+	mov [ss:startRegDW], dx
+	mov [ss:startRegBW], bx
+;	mov [ss:startRegSP], sp
+	mov [ss:startRegBP], bp
+	mov [ss:startRegIX], si
+	mov [ss:startRegIY], di
+	mov ax, es
+	mov [es:startRegDS1], ax
+	mov ax, cs
+	mov [es:startRegPS], ax
+;	mov ax, ss
+;	mov [es:startRegSS], ax
+	mov ax, ds
+	mov [es:startRegDS0], ax
 
 ;-----------------------------------------------------------------------------
 ; Initialize registers and RAM
@@ -51,8 +74,8 @@ initialize:
 	mov sp, WS_STACK
 
 	; Clear Ram
-	mov di, 0x0100
-	mov cx, 0x1E80
+	mov di, 0x0120
+	mov cx, 0x1E70
 	rep stosw
 
 	out IO_SRAM_BANK,al
@@ -240,6 +263,8 @@ main:
 	mov si, headLineStr
 	call writeString
 
+	mov si, menuShowRegistersStr
+	call writeString
 	mov si, menuTestAllStr
 	call writeString
 	mov si, menuTestInterruptStr
@@ -247,6 +272,8 @@ main:
 	mov si, menuTestTimersStr
 	call writeString
 	mov si, menuTestWindowsStr
+	call writeString
+	mov si, menuPowerOffStr
 	call writeString
 
 	; Turn on display
@@ -330,19 +357,30 @@ dontMoveDown:
 	call clearScreen
 
 	cmp cl, 0
-	jz testAll
+	jz showStartRegs
 	cmp cl, 1
-	jz testInterrupt
+	jz testAll
 	cmp cl, 2
-	jz testTimers
+	jz testInterrupt
 	cmp cl, 3
+	jz testTimers
+	cmp cl, 4
 	jz testWindows
+	cmp cl, 5
+	jz powerOffWS
 	; No input, restart main loop
 	jmp mainLoop
 ;-----------------------------------------------------------------------------
 ;
 ; END main area
 ;
+;-----------------------------------------------------------------------------
+showStartRegs:
+	call writeStartRegs
+
+	call checkKeyInput
+	jmp main
+
 ;-----------------------------------------------------------------------------
 testAll:
 	call testIrq
@@ -371,8 +409,82 @@ testTimers:
 testWindows:
 	call testHorizontalWindows
 
-	call checkKeyInput
 	jmp main
+
+;-----------------------------------------------------------------------------
+powerOffWS:
+	mov al, 0x80			; Color mode on
+	out SYSTEM_CTRL2, al
+	mov al, 1
+	out SYSTEM_CTRL3, al
+off:
+	jmp off
+;-----------------------------------------------------------------------------
+writeStartReg:		; SI string, AX value
+;-----------------------------------------------------------------------------
+	push ax
+	call writeString
+	pop ax
+	call printHexW
+	mov al, 10
+	int 0x10
+	ret
+;-----------------------------------------------------------------------------
+writeStartRegs:
+;-----------------------------------------------------------------------------
+	mov si, startFStr
+	mov ax, [es:startRegF]
+	call writeStartReg
+
+	mov si, startAWStr
+	mov ax, [es:startRegAW]
+	call writeStartReg
+
+	mov si, startCWStr
+	mov ax, [es:startRegCW]
+	call writeStartReg
+
+	mov si, startDWStr
+	mov ax, [es:startRegDW]
+	call writeStartReg
+
+	mov si, startBWStr
+	mov ax, [es:startRegBW]
+	call writeStartReg
+
+	mov si, startBPStr
+	mov ax, [es:startRegBP]
+	call writeStartReg
+
+	mov si, startSPStr
+	mov ax, [es:startRegSP]
+	call writeStartReg
+
+	mov si, startIXStr
+	mov ax, [es:startRegIX]
+	call writeStartReg
+
+	mov si, startIYStr
+	mov ax, [es:startRegIY]
+	call writeStartReg
+
+	mov si, startDS1Str
+	mov ax, [es:startRegDS1]
+	call writeStartReg
+
+	mov si, startPSStr
+	mov ax, [es:startRegPS]
+	call writeStartReg
+
+	mov si, startSSStr
+	mov ax, [es:startRegSS]
+	call writeStartReg
+
+	mov si, startDS0Str
+	mov ax, [es:startRegDS0]
+	call writeStartReg
+
+	ret
 
 ;-----------------------------------------------------------------------------
 ; Test Interrupt Manager.
@@ -923,7 +1035,10 @@ testHorizontalWindows:
 	stosw
 	stosw
 
+	in al, IO_KEYPAD
+
 winTestLoop:
+	mov dl, al				; Save key state before
 	mov ax, 0x4428
 	out IO_SCR2_WIN_X1, ax
 	mov ax, 0x47A7
@@ -960,7 +1075,11 @@ winTestLoop:
 	out IO_SCR2_WIN_X2, ax
 
 	hlt
-	jmp winTestLoop
+	in al, IO_KEYPAD
+	test dl, PAD_A | PAD_B
+	jnz winTestLoop
+	test al, PAD_A | PAD_B
+	jz winTestLoop
 
 	mov byte [es:isTesting], 0
 	xor ax, ax
@@ -1415,14 +1534,28 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20230810",10 , 0
+headLineStr: db " WonderSwan HW Test 20230930",10 , 0
 
+menuShowRegistersStr: db "  ShowStartup Registers.",10 , 0
 menuTestAllStr: db "  Test All.",10 , 0
 menuTestInterruptStr: db "  Test Interrupt Manager.",10 , 0
 menuTestTimersStr: db "  Test Timers.",10 , 0
 menuTestWindowsStr: db "  Test Windows.",10 , 0
-menuTestRolShiftStr: db "  Test Rol & Shift.",10 , 0
-menuTestMiscStr: db "  Test Misc.",10 , 0
+menuPowerOffStr: db "  Power Off.",10 , 0
+
+startFStr:   db "F:      ", 0
+startAWStr:  db "AW/AX:  ", 0
+startCWStr:  db "CW/CX:  ", 0
+startDWStr:  db "DW/DX:  ", 0
+startBWStr:  db "BW/BX:  ", 0
+startSPStr:  db "SP:     ", 0
+startBPStr:  db "BP:     ", 0
+startIXStr:  db "IX/SI:  ", 0
+startIYStr:  db "IY/DI:  ", 0
+startDS1Str: db "DS1/ES: ", 0
+startPSStr:  db "PS/CS:  ", 0
+startSSStr:  db "SS:     ", 0
+startDS0Str: db "DS0/DS: ", 0
 
 testingIrqStr: db "Interrupt Manager", 10, 0
 testingIrq0Str: db "IRQs not set when disabled:", 10, 0
@@ -1466,6 +1599,20 @@ author: db "Written by Fredrik Ahlström, 2023"
 	ROM_HEADER initialize, MYSEGMENT, RH_WS_COLOR, RH_ROM_4MBITS, RH_NO_SRAM, RH_HORIZONTAL
 
 SECTION .bss start=0x0100 ; Keep space for Int Vectors
+
+startRegF: resw 1
+startRegAW: resw 1
+startRegCW: resw 1
+startRegDW: resw 1
+startRegBW: resw 1
+startRegSP: resw 1
+startRegBP: resw 1
+startRegIX: resw 1
+startRegIY: resw 1
+startRegDS1: resw 1
+startRegPS: resw 1
+startRegSS: resw 1
+startRegDS0: resw 1
 
 globalFrameCounter: resw 1
 bgPos:

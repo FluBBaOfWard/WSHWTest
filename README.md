@@ -1,7 +1,14 @@
-# WSHWTest V0.1.0 (20230810)
+# WSHWTest V0.1.0 (20230930)
 
 Hardware test suite for WonderSwan
 These descriptions are my interpretation of what is happening, that doesn't mean this is actualy what is happening, I'm open to pull requests for both code and interpretations of how things work.
+
+## Start Registers
+
+On all boot roms in all modes:
+SP is set to 0x2000.
+PS/CS is set to 0xF000.
+DS0/DS is set to boot rom base (0xFF00 for ASWAN and 0xFE00 for SPHINX/SPHINX2).
 
 ## Interrupts
 
