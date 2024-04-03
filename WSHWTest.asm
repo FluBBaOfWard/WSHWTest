@@ -1,7 +1,7 @@
 ;-----------------------------------------------------------------------------
 ;
 ;  WonderSwan Hardware Test
-;         by Fredrik Ahlström, 2023
+;         by Fredrik Ahlström, 2023-2024
 ;         https://github.com/FluBBaOfWard/WSHWTest
 ;
 ;  UP/DOWN    - Choose option
@@ -23,12 +23,13 @@ SECTION .data
 	foregroundMap equ WS_TILE_BANK - MAP_SIZE
 	backgroundMap equ foregroundMap - MAP_SIZE
 	spriteTable equ backgroundMap - SPR_TABLE_SIZE
+	soundTable equ spriteTable - 0x40
 
 	PSR_S equ 0x80
 	PSR_Z equ 0x40
 	PSR_P equ 0x04
 
-	MENU_ENTRIES equ 5
+	MENU_ENTRIES equ 6
 
 SECTION .text
 	;PADDING 15
@@ -108,6 +109,10 @@ initialize:
 
 	xor al, al
 	out IO_LCD_SEG_DATA, al
+
+	; Init Sound
+	mov al,WAVE_RAM(soundTable)
+	out IO_WAVE_RAM, al
 
 ;-----------------------------------------------------------------------------
 ; Register our interrupt handlers
@@ -252,6 +257,11 @@ monoFontLoop:
 	mov ax, 0x0000
 	out IOw_SCR_LUT_4, ax
 
+	; Copy sound to RAM
+	mov si, SoundSamples
+	mov di, soundTable
+	mov cx, 0x20
+	rep movsw
 ;-----------------------------------------------------------------------------
 ; Make background map point to our tiles, essentially "painting" the
 ; background layer with our tiles, coloured as per our palettes
@@ -272,6 +282,8 @@ main:
 	mov si, menuTestTimersStr
 	call writeString
 	mov si, menuTestWindowsStr
+	call writeString
+	mov si, menuTestSoundStr
 	call writeString
 	mov si, menuPowerOffStr
 	call writeString
@@ -367,6 +379,8 @@ dontMoveDown:
 	cmp cl, 4
 	jz testWindows
 	cmp cl, 5
+	jz testSound
+	cmp cl, 6
 	jz powerOffWS
 	; No input, restart main loop
 	jmp mainLoop
@@ -408,6 +422,12 @@ testTimers:
 ;-----------------------------------------------------------------------------
 testWindows:
 	call testHorizontalWindows
+
+	jmp main
+
+;-----------------------------------------------------------------------------
+testSound:
+	call testSoundMixer
 
 	jmp main
 
@@ -1084,6 +1104,38 @@ winTestLoop:
 	mov byte [es:isTesting], 0
 	xor ax, ax
 	ret
+
+;-----------------------------------------------------------------------------
+; Test sound output/mixer.
+;-----------------------------------------------------------------------------
+testSoundMixer:
+	mov ax, 0x1000-0x60			;2kHz?
+	out IOw_SND_FREQ_1, ax
+	mov ax, 0x1000-0xC0			;1kHz?
+	out IOw_SND_FREQ_2, ax
+	mov ax, 0x1000-0x140		;500Hz?
+	out IOw_SND_FREQ_3, ax
+	mov ax, 0x1000-0x280		;250Hz?
+	out IOw_SND_FREQ_4, ax
+
+	mov al, 0xFF
+	out IO_SND_VOL_1, al
+	out IO_SND_VOL_2, al
+	out IO_SND_VOL_3, al
+	out IO_SND_VOL_4, al
+
+	mov al, SND_1_ON | SND_2_ON | SND_3_ON | SND_4_ON
+	out IO_SND_CH_CTRL, al
+
+	mov al, 0xF
+	out IO_SND_OUT_CTRL, al
+
+	call checkKeyInput
+
+	mov al, 0
+	out IO_SND_CH_CTRL, al
+
+	ret
 ;-----------------------------------------------------------------------------
 ; Wait for input, A continue, B cancel.
 ;-----------------------------------------------------------------------------
@@ -1528,20 +1580,27 @@ MonoFont:
 	db 0x10,0x10,0x10,0x00,0x10,0x10,0x10,0x00,0x20,0x10,0x10,0x08,0x10,0x10,0x20,0x00
 	db 0x00,0x00,0x60,0x92,0x0C,0x00,0x00,0x00,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF
 
+SoundSamples:
+	db 0x98,0xCB,0xED,0xFF,0xFF,0xEF,0xBD,0x8A,0x57,0x24,0x01,0x00,0x00,0x21,0x43,0x76
+	db 0x98,0xCB,0xED,0xFF,0xFF,0xEF,0xBD,0x8A,0x57,0x24,0x01,0x00,0x00,0x21,0x43,0x76
+	db 0x98,0xCB,0xED,0xFF,0xFF,0xEF,0xBD,0x8A,0x57,0x24,0x01,0x00,0x00,0x21,0x43,0x76
+	db 0x98,0xCB,0xED,0xFF,0xFF,0xEF,0xBD,0x8A,0x57,0x24,0x01,0x00,0x00,0x21,0x43,0x76
+
 prepareData:
 	dw 0xF0AB, 0x570D
 
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20230930",10 , 0
+headLineStr: db " WonderSwan HW Test 20240403", 10, 0
 
-menuShowRegistersStr: db "  ShowStartup Registers.",10 , 0
+menuShowRegistersStr: db "  ShowStartup Registers.", 10, 0
 menuTestAllStr: db "  Test All.",10 , 0
-menuTestInterruptStr: db "  Test Interrupt Manager.",10 , 0
-menuTestTimersStr: db "  Test Timers.",10 , 0
-menuTestWindowsStr: db "  Test Windows.",10 , 0
-menuPowerOffStr: db "  Power Off.",10 , 0
+menuTestInterruptStr: db "  Test Interrupt Manager.", 10, 0
+menuTestTimersStr: db "  Test Timers.", 10, 0
+menuTestWindowsStr: db "  Test Windows.", 10, 0
+menuTestSoundStr: db "  Test Sound.", 10, 0
+menuPowerOffStr: db "  Power Off.", 10, 0
 
 startFStr:   db "F:      ", 0
 startAWStr:  db "AW/AX:  ", 0
@@ -1585,16 +1644,16 @@ test16x16InputStr: db "Testing Inp: 0x0000, 0x0000", 0
 inputStr: db "Input:0x", 0
 expectedStr: db "Expected Result:", 10, 0
 testedStr: db "Tested Result:", 10, 0
-valueStr: db "Value:0x",0
-flagsStr: db " Flags:0x",0
+valueStr: db "Value:0x", 0
+flagsStr: db " Flags:0x", 0
 okStr: db "Ok!", 10, 0
 failedStr: db "Failed!", 10, 0
 preFlagStr: db "PreF: ", 0
 postFlagStr: db "PostF: ", 0
-hexPrefixStr: db " 0x",0
-fHexPrefixStr: db " F:0x",0
+hexPrefixStr: db " 0x", 0
+fHexPrefixStr: db " F:0x", 0
 
-author: db "Written by Fredrik Ahlström, 2023"
+author: db "Written by Fredrik Ahlström, 2023-2024"
 
 	ROM_HEADER initialize, MYSEGMENT, RH_WS_COLOR, RH_ROM_4MBITS, RH_NO_SRAM, RH_HORIZONTAL
 
