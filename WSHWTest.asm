@@ -300,35 +300,13 @@ main:
 mainLoop:
 	hlt					; Wait until next interrupt
 
-	mov al, KEYPAD_READ_ARROWS_H
-	out IO_KEYPAD, al
-	nop
-	nop
-	nop
-	nop
-	in al, IO_KEYPAD
-	mov bl, al
-	mov al, KEYPAD_READ_BUTTONS
-	out IO_KEYPAD, al
-	nop
-	nop
-	nop
-	nop
-	in al, IO_KEYPAD
-	and al, 0x0F
-	shl bl, 4
-	or al, bl
-	mov bl, [es:keysHeld]
-	mov [es:keysHeld], al
-	xor bl, al
-	and bl, al
-	mov [es:keysDown], bl
+	mov bx, [es:keysDown]
 
 	; Check player input
-;	test al, PAD_RIGHT
+;	test bl, (PAD_RIGHT<<4)
 ;	jnz speed_up
 
-;	test al, PAD_LEFT
+;	test bl, (PAD_LEFT<<4)
 ;	jnz speed_down
 
 	mov cl, [es:menuYPos]
@@ -541,9 +519,6 @@ testIrq:
 	; Enable serial
 	mov al, COMM_ENABLE | COMM_SPEED_38400
 	out IO_SERIAL_STATUS, al
-
-	mov al, KEYPAD_READ_BUTTONS
-	out IO_KEYPAD, al
 
 	mov bl,40
 	call waitLine
@@ -990,7 +965,10 @@ timer5Fail:
 	mov si, okStr
 timer6Fail:
 	call writeString
-
+	mov al, INT_VBLANK_START 
+	out IO_INT_ENABLE, al
+	sti
+	ret
 ;-----------------------------------------------------------------------------
 testVBlankTimer:
 
@@ -1055,10 +1033,8 @@ testHorizontalWindows:
 	stosw
 	stosw
 
-	in al, IO_KEYPAD
 
 winTestLoop:
-	mov dl, al				; Save key state before
 	mov ax, 0x4428
 	out IO_SCR2_WIN_X1, ax
 	mov ax, 0x47A7
@@ -1095,9 +1071,7 @@ winTestLoop:
 	out IO_SCR2_WIN_X2, ax
 
 	hlt
-	in al, IO_KEYPAD
-	test dl, PAD_A | PAD_B
-	jnz winTestLoop
+	mov al, [es:keysDown]
 	test al, PAD_A | PAD_B
 	jz winTestLoop
 
@@ -1109,6 +1083,15 @@ winTestLoop:
 ; Test sound output/mixer.
 ;-----------------------------------------------------------------------------
 testSoundMixer:
+	mov si, testingSoundStr
+	call writeString
+
+	mov si, testingSound0Str
+	call writeString
+
+	mov si, testingSound1Str
+	call writeString
+
 	mov ax, 0x1000-0x60			;2kHz?
 	out IOw_SND_FREQ_1, ax
 	mov ax, 0x1000-0xC0			;1kHz?
@@ -1124,13 +1107,35 @@ testSoundMixer:
 	out IO_SND_VOL_3, al
 	out IO_SND_VOL_4, al
 
-	mov al, SND_1_ON | SND_2_ON | SND_3_ON | SND_4_ON
+	xor ah,ah
+	mov bl, 6
+	mov cl, SND_1_ON | SND_2_ON | SND_3_ON | SND_4_ON
+soundLoop:
+	test al, (PAD_LEFT<<4)
+	jz noSndAdd
+	sub bl, 2
+	jns noSndAdd
+	mov bl, 0
+noSndAdd:
+	test al, (PAD_RIGHT<<4)
+	jz noSndSub
+	add bl, 2
+	cmp bl, 6
+	jc noSndSub
+	mov bl, 6
+noSndSub:
+	xor cl, ah				; Y1-Y4 to turn on/off Ch
+	mov al, cl
 	out IO_SND_CH_CTRL, al
 
-	mov al, 0xF
+	mov al, 0x9
+	or al, bl
 	out IO_SND_OUT_CTRL, al
 
-	call checkKeyInput
+	hlt
+	mov ax, [es:keysDown]
+	test al, PAD_A | PAD_B
+	jz soundLoop
 
 	mov al, 0
 	out IO_SND_CH_CTRL, al
@@ -1141,14 +1146,9 @@ testSoundMixer:
 ;-----------------------------------------------------------------------------
 checkKeyInput:
 	hlt
-	in al, IO_KEYPAD
+	mov al, [es:keysDown]
 	test al, PAD_A | PAD_B
-	jnz checkKeyInput		; Make sure no input is held before.
-keyLoop:
-	hlt
-	in al, IO_KEYPAD
-	test al, PAD_A | PAD_B
-	jz keyLoop
+	jz checkKeyInput
 	and al, PAD_A
 	jz keyCancel
 	mov al, 1
@@ -1331,6 +1331,39 @@ vblankInterruptHandler:
 	push ax
 	push bx
 	push di
+
+	mov al, KEYPAD_READ_BUTTONS
+	out IO_KEYPAD, al
+	nop
+	nop
+	nop
+	nop
+	in al, IO_KEYPAD
+	mov bl, al
+	and bl, 0x0F
+	mov al, KEYPAD_READ_ARROWS_H
+	out IO_KEYPAD, al
+	nop
+	nop
+	nop
+	nop
+	in al, IO_KEYPAD
+	shl al, 4
+	or bl, al
+	mov al, KEYPAD_READ_ARROWS_V
+	out IO_KEYPAD, al
+	nop
+	nop
+	nop
+	nop
+	in al, IO_KEYPAD
+	shl ax, 8
+	or bh, ah
+	mov ax, [es:keysHeld]
+	mov [es:keysHeld], bx
+	xor ax, bx
+	and ax, bx
+	mov [es:keysDown], ax
 
 	; globalFrameCounter++
 	inc word [es:globalFrameCounter]
@@ -1592,7 +1625,7 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20240403", 10, 0
+headLineStr: db " WonderSwan HW Test 20240404", 10, 0
 
 menuShowRegistersStr: db "  ShowStartup Registers.", 10, 0
 menuTestAllStr: db "  Test All.",10 , 0
@@ -1635,6 +1668,10 @@ testingTimer3Str: db "Timers run when on+one shot:", 0
 testingTimer4Str: db "Timers dont run, off+repeat:", 0
 testingTimer5Str: db "Timers continue by on/off:", 10, 0
 testingTimer6Str: db "Timers always fire when c 1:", 0
+
+testingSoundStr: db "Sound wrapping/clipping", 10, 0
+testingSound0Str: db "Y1-Y4 to turn ch on/off", 10, 0
+testingSound1Str: db "X2,X4 to change shift", 10, 0
 
 test8InputStr: db "Testing Input: 0x00", 0
 test16InputStr: db "Testing Input: 0x0000", 0
@@ -1685,10 +1722,10 @@ cursorXPos: resb 1
 cursorYPos: resb 1
 menuXPos: resb 1
 menuYPos: resb 1
-keysHeld: resb 1
-keysDown: resb 1
 
 	align 2
+keysHeld: resw 1
+keysDown: resw 1
 lfsr1: resw 1
 lfsr2: resw 1
 
