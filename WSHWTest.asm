@@ -29,7 +29,7 @@ SECTION .data
 	PSR_Z equ 0x40
 	PSR_P equ 0x04
 
-	MENU_ENTRIES equ 6
+	MENU_ENTRIES equ 7
 
 SECTION .text
 	;PADDING 15
@@ -285,6 +285,8 @@ main:
 	call writeString
 	mov si, menuTestSoundStr
 	call writeString
+	mov si, menuTestSweepStr
+	call writeString
 	mov si, menuPowerOffStr
 	call writeString
 
@@ -359,6 +361,8 @@ dontMoveDown:
 	cmp cl, 5
 	jz testSound
 	cmp cl, 6
+	jz testSoundSweep
+	cmp cl, 7
 	jz powerOffWS
 	; No input, restart main loop
 	jmp mainLoop
@@ -1142,6 +1146,68 @@ noSndSub:
 
 	ret
 ;-----------------------------------------------------------------------------
+; Test sound sweep.
+;-----------------------------------------------------------------------------
+testSoundSweep:
+	mov si, testingSweepStr
+	call writeString
+
+	mov si, testingSweep0Str
+	call writeString
+
+	mov si, testingSweep1Str
+	call writeString
+
+;	mov ax, 0x1000-0x60			;2kHz?
+;	out IOw_SND_FREQ_1, ax
+;	mov ax, 0x1000-0xC0			;1kHz?
+;	out IOw_SND_FREQ_2, ax
+	mov ax, 0x1000-0x140		;500Hz?
+	out IOw_SND_FREQ_3, ax
+;	mov ax, 0x1000-0x280		;250Hz?
+;	out IOw_SND_FREQ_4, ax
+
+	mov al, 0xFF
+;	out IO_SND_VOL_1, al
+;	out IO_SND_VOL_2, al
+	out IO_SND_VOL_3, al
+;	out IO_SND_VOL_4, al
+
+	xor ah,ah
+	mov al, SND_3_ON | SND_3_SWEEP
+	out IO_SND_CH_CTRL, al
+	mov bl, 6
+	mov cl, 1
+sweepLoop:
+	test al, (PAD_LEFT<<4)
+	jz noSweepAdd
+	sub bl, 2
+	jns noSweepAdd
+	mov bl, 0
+noSweepAdd:
+	test al, (PAD_RIGHT<<4)
+	jz noSweepSub
+	add bl, 2
+	cmp bl, 6
+	jc noSweepSub
+	mov bl, 6
+noSweepSub:
+	mov al, bl
+	out IO_SND_SWEEP, al
+
+	mov al, cl
+	out IO_SND_SWEEP_TIME, al
+
+	hlt
+	mov ax, [es:keysDown]
+	test al, PAD_A | PAD_B
+	jz sweepLoop
+
+	mov al, 0
+	out IO_SND_CH_CTRL, al
+
+	ret
+;-----------------------------------------------------------------------------
 ; Wait for input, A continue, B cancel.
 ;-----------------------------------------------------------------------------
 checkKeyInput:
@@ -1632,7 +1698,8 @@ menuTestAllStr: db "  Test All.",10 , 0
 menuTestInterruptStr: db "  Test Interrupt Manager.", 10, 0
 menuTestTimersStr: db "  Test Timers.", 10, 0
 menuTestWindowsStr: db "  Test Windows.", 10, 0
-menuTestSoundStr: db "  Test Sound.", 10, 0
+menuTestSoundStr: db "  Test Sound Mixer.", 10, 0
+menuTestSweepStr: db "  Test Sound Sweep.", 10, 0
 menuPowerOffStr: db "  Power Off.", 10, 0
 
 startFStr:   db "F:      ", 0
@@ -1672,6 +1739,10 @@ testingTimer6Str: db "Timers always fire when c 1:", 0
 testingSoundStr: db "Sound wrapping/clipping", 10, 0
 testingSound0Str: db "Y1-Y4 to turn ch on/off", 10, 0
 testingSound1Str: db "X2,X4 to change shift", 10, 0
+
+testingSweepStr: db "Sound sweep", 10, 0
+testingSweep0Str: db "Y1-Y4 to change amount", 10, 0
+testingSweep1Str: db "X2,X4 to change tick", 10, 0
 
 test8InputStr: db "Testing Input: 0x00", 0
 test16InputStr: db "Testing Input: 0x0000", 0
