@@ -29,7 +29,7 @@ SECTION .data
 	PSR_Z equ 0x40
 	PSR_P equ 0x04
 
-	MENU_ENTRIES equ 7
+	MENU_ENTRIES equ 8
 
 SECTION .text
 	;PADDING 15
@@ -211,13 +211,13 @@ initialize:
 	out IOw_H_BLANK_TIMER, ax
 	out IO_TIMER_CTRL, al
 
-	; Acknowledge all interrupts
-	dec al
-	out INT_CAUSE_CLEAR, al
-
 	; Enable VBL interrupt
 	mov al, INT_VBLANK_START
 	out IO_INT_ENABLE, al
+
+	; Acknowledge all interrupts
+	mov al, 0xFF
+	out INT_CAUSE_CLEAR, al
 
 	; We have finished initializing, interrupts can now fire again
 	sti
@@ -286,6 +286,8 @@ main:
 	mov si, menuTestSoundStr
 	call writeString
 	mov si, menuTestSweepStr
+	call writeString
+	mov si, menuLcdOffStr
 	call writeString
 	mov si, menuPowerOffStr
 	call writeString
@@ -361,8 +363,10 @@ dontMoveDown:
 	cmp cl, 5
 	jz testSound
 	cmp cl, 6
-	jz testSoundSweep
+	jz testSoundSwp
 	cmp cl, 7
+	jz turnOffLCD
+	cmp cl, 8
 	jz powerOffWS
 	; No input, restart main loop
 	jmp mainLoop
@@ -414,13 +418,74 @@ testSound:
 	jmp main
 
 ;-----------------------------------------------------------------------------
+testSoundSwp:
+	call testSoundSweep
+
+	jmp main
+
+;-----------------------------------------------------------------------------
 powerOffWS:
-	mov al, 0x80			; Color mode on
-	out SYSTEM_CTRL2, al
+	mov si, testingPowerOffStr
+	call writeString
 	mov al, 1
 	out SYSTEM_CTRL3, al
 off:
-	jmp off
+	hlt
+	nop
+	call checkKeyInput
+	jmp main
+;-----------------------------------------------------------------------------
+turnOffLCD:
+	mov si, testingLcdOffStr
+	call writeString
+	in al, IO_LCD_SEG_DATA
+	or al, LCD_ICON_SLEEP
+	out IO_LCD_SEG_DATA, al
+	in al,IO_LCD_IF_CTRL
+	and al, 0xFE		; LCD off
+	out IO_LCD_IF_CTRL, al
+
+lcdWait:
+	hlt
+	mov ax, [es:keysHeld]
+	test al, PAD_A | PAD_B | PAD_START
+	jnz lcdWait
+
+	cli
+	mov al, KEYPAD_READ_BUTTONS
+	out IO_KEYPAD, al
+	; Enable only Joy interrupt
+	mov al, INT_KEY_PRESS
+	out IO_INT_ENABLE, al
+	; Acknowledge all interrupts
+	mov al, 0xFF
+	out INT_CAUSE_CLEAR, al
+
+	sti
+	hlt					; Wait for key press
+
+	; Enable VBL interrupt
+	mov al, INT_VBLANK_START
+	out IO_INT_ENABLE, al
+	; Acknowledge all interrupts
+	mov al, 0xFF
+	out INT_CAUSE_CLEAR, al
+
+	in al,IO_LCD_IF_CTRL
+	or al, LCD_ON
+	out IO_LCD_IF_CTRL, al
+	in al,IO_LCD_SEG_DATA
+	and al, 0xFE		; Sleep icon off
+	out IO_LCD_SEG_DATA, al
+
+	xor ax, ax
+	mov si, testingKeyIrqLine
+	mov al, [es:keyIrqLine]
+	call writeStartReg
+
+	hlt
+	call checkKeyInput
+	jmp main
 ;-----------------------------------------------------------------------------
 writeStartReg:		; SI string, AX value
 ;-----------------------------------------------------------------------------
@@ -1096,13 +1161,20 @@ testSoundMixer:
 	mov si, testingSound1Str
 	call writeString
 
-	mov ax, 0x1000-0x60			;2kHz?
+	in al, IO_SND_OUT_CTRL
+	test al, 0x80				;Headphones?
+	jz noHeadPhones
+	mov si, testingSound2Str
+	call writeString
+noHeadPhones:
+
+	mov ax, 0x800-0x60			;2kHz?
 	out IOw_SND_FREQ_1, ax
-	mov ax, 0x1000-0xC0			;1kHz?
+	mov ax, 0x800-0xC0			;1kHz?
 	out IOw_SND_FREQ_2, ax
-	mov ax, 0x1000-0x140		;500Hz?
+	mov ax, 0x800-0x140			;500Hz?
 	out IOw_SND_FREQ_3, ax
-	mov ax, 0x1000-0x280		;250Hz?
+	mov ax, 0x800-0x280			;250Hz?
 	out IOw_SND_FREQ_4, ax
 
 	mov al, 0xFF
@@ -1132,7 +1204,7 @@ noSndSub:
 	mov al, cl
 	out IO_SND_CH_CTRL, al
 
-	mov al, 0x9
+	mov al, 0x1
 	or al, bl
 	out IO_SND_OUT_CTRL, al
 
@@ -1158,13 +1230,13 @@ testSoundSweep:
 	mov si, testingSweep1Str
 	call writeString
 
-;	mov ax, 0x1000-0x60			;2kHz?
+;	mov ax, 0x800-0x60			;2kHz?
 ;	out IOw_SND_FREQ_1, ax
-;	mov ax, 0x1000-0xC0			;1kHz?
+;	mov ax, 0x800-0xC0			;1kHz?
 ;	out IOw_SND_FREQ_2, ax
-	mov ax, 0x1000-0x140		;500Hz?
+	mov ax, 0x800-0x140			;500Hz?
 	out IOw_SND_FREQ_3, ax
-;	mov ax, 0x1000-0x280		;250Hz?
+;	mov ax, 0x800-0x280			;250Hz?
 ;	out IOw_SND_FREQ_4, ax
 
 	mov al, 0xFF
@@ -1176,6 +1248,8 @@ testSoundSweep:
 	xor ah,ah
 	mov al, SND_3_ON | SND_3_SWEEP
 	out IO_SND_CH_CTRL, al
+	mov al, 0x9
+	out IO_SND_OUT_CTRL, al
 	mov bl, 6
 	mov cl, 1
 sweepLoop:
@@ -1213,7 +1287,7 @@ noSweepSub:
 checkKeyInput:
 	hlt
 	mov al, [es:keysDown]
-	test al, PAD_A | PAD_B
+	test al, PAD_A | PAD_B | PAD_START
 	jz checkKeyInput
 	and al, PAD_A
 	jz keyCancel
@@ -1423,8 +1497,7 @@ vblankInterruptHandler:
 	nop
 	nop
 	in al, IO_KEYPAD
-	shl ax, 8
-	or bh, ah
+	mov bh, al
 	mov ax, [es:keysHeld]
 	mov [es:keysHeld], bx
 	xor ax, bx
@@ -1560,7 +1633,13 @@ cartridgeIrqHandler:
 ; The Key Press handler
 ;-----------------------------------------------------------------------------
 keyPressHandler:
+	push ax
+	in al, IO_LCD_LINE
+	mov [es:keyIrqLine], al
 	inc word[es:keyPressIrqCount]
+	mov al, INT_KEY_PRESS
+	out INT_CAUSE_CLEAR, al
+	pop ax
 	iret
 ;-----------------------------------------------------------------------------
 ; The Serial Transmit handler
@@ -1691,7 +1770,7 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20240404", 10, 0
+headLineStr: db " WonderSwan HW Test 20250313", 10, 0
 
 menuShowRegistersStr: db "  ShowStartup Registers.", 10, 0
 menuTestAllStr: db "  Test All.",10 , 0
@@ -1701,6 +1780,7 @@ menuTestWindowsStr: db "  Test Windows.", 10, 0
 menuTestSoundStr: db "  Test Sound Mixer.", 10, 0
 menuTestSweepStr: db "  Test Sound Sweep.", 10, 0
 menuPowerOffStr: db "  Power Off.", 10, 0
+menuLcdOffStr: db "  LCD Off.", 10, 0
 
 startFStr:   db "F:      ", 0
 startAWStr:  db "AW/AX:  ", 0
@@ -1739,10 +1819,15 @@ testingTimer6Str: db "Timers always fire when c 1:", 0
 testingSoundStr: db "Sound wrapping/clipping", 10, 0
 testingSound0Str: db "Y1-Y4 to turn ch on/off", 10, 0
 testingSound1Str: db "X2,X4 to change shift", 10, 0
+testingSound2Str: db "Remove headphones to test", 10, 0
 
 testingSweepStr: db "Sound sweep", 10, 0
 testingSweep0Str: db "Y1-Y4 to change amount", 10, 0
 testingSweep1Str: db "X2,X4 to change tick", 10, 0
+
+testingPowerOffStr: db "Power Off only on color", 10, 0
+testingLcdOffStr: db "LCD Off", 10, 0
+testingKeyIrqLine:  db "Key Irq Line: ", 0
 
 test8InputStr: db "Testing Input: 0x00", 0
 test16InputStr: db "Testing Input: 0x0000", 0
@@ -1761,7 +1846,7 @@ postFlagStr: db "PostF: ", 0
 hexPrefixStr: db " 0x", 0
 fHexPrefixStr: db " F:0x", 0
 
-author: db "Written by Fredrik Ahlström, 2023-2024"
+author: db "Written by Fredrik Ahlström, 2023-2025"
 
 	ROM_HEADER initialize, MYSEGMENT, RH_WS_COLOR, RH_ROM_4MBITS, RH_NO_SRAM, RH_HORIZONTAL
 
@@ -1795,7 +1880,9 @@ menuXPos: resb 1
 menuYPos: resb 1
 
 	align 2
+; Keys held down
 keysHeld: resw 1
+; Keys pressed down since last time
 keysDown: resw 1
 lfsr1: resw 1
 lfsr2: resw 1
@@ -1830,6 +1917,6 @@ boundLow: resw 1
 boundHigh: resw 1
 
 isTesting: resb 1			; If currently running test.
-dummy: resb 1
+keyIrqLine: resb 1
 
 selfModifyingCode: resb 8
