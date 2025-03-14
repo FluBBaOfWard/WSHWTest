@@ -258,7 +258,7 @@ SND_OUT_STEREO	equ	0x08
 %define	SND_OUT_VOLUME(a)	((a & 0x03) << 1)
 
 IOw_SND_RANDOM	equ	0x92
-IO_SND_VOL_CH2	equ	0x94	; Ch2 Sample Volume (4 bits, left/right)
+IO_SND_CH2_SMP	equ	0x94	; Ch2 Voice Sample 8 bits unsigned
 
 SYSTEM_CTRL1	equ	0xA0
 WS_COLOR		equ	0x02

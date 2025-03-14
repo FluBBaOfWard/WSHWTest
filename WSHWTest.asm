@@ -1,7 +1,7 @@
 ;-----------------------------------------------------------------------------
 ;
 ;  WonderSwan Hardware Test
-;         by Fredrik Ahlström, 2023-2024
+;         by Fredrik Ahlström, 2023-2025
 ;         https://github.com/FluBBaOfWard/WSHWTest
 ;
 ;  UP/DOWN    - Choose option
@@ -29,7 +29,7 @@ SECTION .data
 	PSR_Z equ 0x40
 	PSR_P equ 0x04
 
-	MENU_ENTRIES equ 8
+	MENU_ENTRIES equ 9
 
 SECTION .text
 	;PADDING 15
@@ -287,6 +287,8 @@ main:
 	call writeString
 	mov si, menuTestSweepStr
 	call writeString
+	mov si, menuTestNoiseStr
+	call writeString
 	mov si, menuLcdOffStr
 	call writeString
 	mov si, menuPowerOffStr
@@ -365,8 +367,10 @@ dontMoveDown:
 	cmp cl, 6
 	jz testSoundSwp
 	cmp cl, 7
-	jz turnOffLCD
+	jz testNoise
 	cmp cl, 8
+	jz turnOffLCD
+	cmp cl, 9
 	jz powerOffWS
 	; No input, restart main loop
 	jmp mainLoop
@@ -421,6 +425,13 @@ testSound:
 testSoundSwp:
 	call testSoundSweep
 
+	jmp main
+
+;-----------------------------------------------------------------------------
+testNoise:
+	call testNoiseValues
+
+	call checkKeyInput
 	jmp main
 
 ;-----------------------------------------------------------------------------
@@ -1230,20 +1241,11 @@ testSoundSweep:
 	mov si, testingSweep1Str
 	call writeString
 
-;	mov ax, 0x800-0x60			;2kHz?
-;	out IOw_SND_FREQ_1, ax
-;	mov ax, 0x800-0xC0			;1kHz?
-;	out IOw_SND_FREQ_2, ax
 	mov ax, 0x800-0x140			;500Hz?
 	out IOw_SND_FREQ_3, ax
-;	mov ax, 0x800-0x280			;250Hz?
-;	out IOw_SND_FREQ_4, ax
 
 	mov al, 0xFF
-;	out IO_SND_VOL_1, al
-;	out IO_SND_VOL_2, al
 	out IO_SND_VOL_3, al
-;	out IO_SND_VOL_4, al
 
 	xor ah,ah
 	mov al, SND_3_ON | SND_3_SWEEP
@@ -1281,6 +1283,132 @@ noSweepSub:
 	out IO_SND_CH_CTRL, al
 
 	ret
+;-----------------------------------------------------------------------------
+; Test noise values.
+;-----------------------------------------------------------------------------
+testNoiseValues:
+	mov si, testingNoiseStr
+	call writeString
+
+	mov ax, 0x800-0x200			;Change every raster row.
+	out IOw_SND_FREQ_4, ax
+
+	mov al, 0x22
+	out IO_SND_VOL_4, al
+
+	mov al, SND_4_ON | SND_4_NOISE
+	out IO_SND_CH_CTRL, al
+	mov al, 0x9
+	out IO_SND_OUT_CTRL, al
+
+	mov bp, 0x4080<<1			; Tap bit 14 & 7
+	mov al, NOISE_ENABLE | NOISE_RESET | 0
+	mov cx, 32767
+	call runNoiseTest
+	cmp al, 0
+	jnz noiseNotOk
+
+	mov bp, 0x0480<<1			; Tap bit 10 & 7
+	mov al, NOISE_ENABLE | NOISE_RESET | 1
+	mov cx, 1953
+	call runNoiseTest
+	cmp al, 0
+	jnz noiseNotOk
+
+	mov bp, 0x2080<<1			; Tap bit 13 & 7
+	mov al, NOISE_ENABLE | NOISE_RESET | 2
+	mov cx, 254
+	call runNoiseTest
+	cmp al, 0
+	jnz noiseNotOk
+
+	mov bp, 0x0090<<1			; Tap bit 4 & 7
+	mov al, NOISE_ENABLE | NOISE_RESET | 3
+	mov cx, 217
+	call runNoiseTest
+	cmp al, 0
+	jnz noiseNotOk
+
+	mov bp, 0x0180<<1			; Tap bit 8 & 7
+	mov al, NOISE_ENABLE | NOISE_RESET | 4
+	mov cx, 73
+	call runNoiseTest
+	cmp al, 0
+	jnz noiseNotOk
+
+	mov bp, 0x00C0<<1			; Tap bit 6 & 7
+	mov al, NOISE_ENABLE | NOISE_RESET | 5
+	mov cx, 63
+	call runNoiseTest
+	cmp al, 0
+	jnz noiseNotOk
+
+	mov bp, 0x0280<<1			; Tap bit 9 & 7
+	mov al, NOISE_ENABLE | NOISE_RESET | 6
+	mov cx, 42
+	call runNoiseTest
+	cmp al, 0
+	jnz noiseNotOk
+
+	mov bp, 0x0880<<1			; Tap bit 11 & 7
+	mov al, NOISE_ENABLE | NOISE_RESET | 7
+	mov cx, 28
+	call runNoiseTest
+	cmp al, 0
+	jnz noiseNotOk
+
+	mov si, okStr
+	jmp noiseIsOk
+noiseNotOk:
+	mov si, failedStr
+noiseIsOk:
+	call writeString
+	mov al, 0
+	out IO_SND_CH_CTRL, al
+
+	ret
+
+runNoiseTest:
+	mov bl, al
+	and ax, 7
+	mov si, testingNoiseMode
+	call writeStartReg
+	mov al, bl
+	xor bx, bx
+	cli
+	out IO_SND_NOISE_CTRL, al
+noiseLoop:
+	in ax, IOw_SND_RANDOM
+	cmp ax, bx
+	jz noiseLoop
+
+	add bx, bx
+	mov dx, bx
+	and dx, bp
+	jz eqNoise
+	xor dx, bp
+	jnz neNoise
+eqNoise:
+	or bl, 1
+neNoise:
+	and bh, 0x7F
+	cmp ax, bx
+	jnz noiseFail
+	loop noiseLoop
+noiseFinished:
+	sti
+	ret
+noiseFail:
+	push bx
+	mov si, testingNoiseReadVal
+	call writeStartReg
+	pop ax
+	mov si, testingNoiseExpVal
+	call writeStartReg
+	mov al, 1
+	sti
+	ret
+
 ;-----------------------------------------------------------------------------
 ; Wait for input, A continue, B cancel.
 ;-----------------------------------------------------------------------------
@@ -1431,6 +1559,7 @@ clearTileMap:
 ; Write text to background. si = source
 ;-----------------------------------------------------------------------------
 writeString:
+	push cx
 	mov cx, SCREEN_TWIDTH * SCREEN_THEIGHT
 textLoop:
 	lodsb
@@ -1439,6 +1568,7 @@ textLoop:
 	jz endString
 	loop textLoop
 endString:
+	pop cx
 	ret
 
 ;-----------------------------------------------------------------------------
@@ -1770,7 +1900,7 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20250313", 10, 0
+headLineStr: db " WonderSwan HW Test 20250315", 10, 0
 
 menuShowRegistersStr: db "  ShowStartup Registers.", 10, 0
 menuTestAllStr: db "  Test All.",10 , 0
@@ -1779,6 +1909,7 @@ menuTestTimersStr: db "  Test Timers.", 10, 0
 menuTestWindowsStr: db "  Test Windows.", 10, 0
 menuTestSoundStr: db "  Test Sound Mixer.", 10, 0
 menuTestSweepStr: db "  Test Sound Sweep.", 10, 0
+menuTestNoiseStr: db "  Test Noise Values.", 10, 0
 menuPowerOffStr: db "  Power Off.", 10, 0
 menuLcdOffStr: db "  LCD Off.", 10, 0
 
@@ -1824,6 +1955,11 @@ testingSound2Str: db "Remove headphones to test", 10, 0
 testingSweepStr: db "Sound sweep", 10, 0
 testingSweep0Str: db "Y1-Y4 to change amount", 10, 0
 testingSweep1Str: db "X2,X4 to change tick", 10, 0
+
+testingNoiseStr: db "Sound Noise Values", 10, 0
+testingNoiseMode:  db "Noise Mode: ", 0
+testingNoiseExpVal:  db "Noise Expected Value: ", 0
+testingNoiseReadVal:  db "Noise Read Value: ", 0
 
 testingPowerOffStr: db "Power Off only on color", 10, 0
 testingLcdOffStr: db "LCD Off", 10, 0
