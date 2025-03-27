@@ -16,7 +16,7 @@
 	CPU 186
 	BITS 16
 
-SECTION .data
+;SECTION .data
 	%include "WonderSwan.inc"
 
 	MYSEGMENT equ 0xf000
@@ -32,8 +32,20 @@ SECTION .data
 	MENU_ENTRIES equ 9
 
 SECTION .text
-	;PADDING 15
-
+;-----------------------------------------------------------------------------
+debugInit:				; this should be called when keypad row 0 is always 1
+;-----------------------------------------------------------------------------
+	mov al, 1
+	mov [ss:pcv2Mode], al
+	jmp initialize
+	times	(16)-$+$$ db 0x00
+;-----------------------------------------------------------------------------
+pcv2Init:				; this should be called when keypad row 1 is always 1
+;-----------------------------------------------------------------------------
+	mov al, 2
+	mov [ss:pcv2Mode], al
+;	jmp initialize
+;-----------------------------------------------------------------------------
 initialize:
 	xor ax, ax
 	mov ss, ax			; Set SS segment to 0x0000 (RAM).
@@ -463,7 +475,14 @@ lcdWait:
 	jnz lcdWait
 
 	cli
+	mov al, [ss:pcv2Mode]
+	cmp al, 2
+	jnz .f0
+	mov al, KEYPAD_READ_ARROWS_V	; This is buttons on PCV2.
+	jmp .f1
+.f0:
 	mov al, KEYPAD_READ_BUTTONS
+.f1:
 	out IO_KEYPAD, al
 	; Enable only Joy interrupt
 	mov al, INT_KEY_PRESS
@@ -1594,40 +1613,79 @@ printNibble:
 	add al, 'a' - 0xa
 	int 0x10
 	ret
+
+;-----------------------------------------------------------------------------
+; Special Keypad handler for PCV2
+;-----------------------------------------------------------------------------
+checkPCV2Keys:
+	push si
+	xor ah,ah
+	xor bh,bh
+	mov al, KEYPAD_READ_BUTTONS
+	out IO_KEYPAD, al
+	daa
+	in al, IO_KEYPAD
+	and al, 0x0F
+	mov si, ax
+	mov bl,[ds:pcv2udl, si]
+	shl bl, 4
+	mov al, KEYPAD_READ_ARROWS_H
+	out IO_KEYPAD, al
+	daa
+	in al, IO_KEYPAD
+	and al, 0x0F
+	mov si, ax
+	mov al,[ds:pcv2rev, si]
+	or bl, al
+	mov al, KEYPAD_READ_ARROWS_V
+	out IO_KEYPAD, al
+	daa
+	in al, IO_KEYPAD
+	and al, 0x0F
+	mov si, ax
+	mov al,[ds:pcv2pcc, si]
+	or bl, al
+
+	pop si
+	ret
+;-----------------------------------------------------------------------------
+pcv2udl:
+	db 0x0, 0x8, 0x0, 0x8, 0x4, 0xC, 0x4, 0xC, 0x1, 0x9, 0x1, 0x9, 0x5, 0xD, 0x5, 0xD
+pcv2rev:
+	db 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1
+pcv2pcc:
+	db 0x0, 0x8, 0x0, 0x4, 0x8, 0xC, 0x8, 0xC, 0x0, 0x4, 0x0, 0x4, 0x8, 0xC, 0x8, 0xC
 ;-----------------------------------------------------------------------------
 ; Our vblank interrupt handler
 ;-----------------------------------------------------------------------------
 vblankInterruptHandler:
 	push ax
 	push bx
-	push di
 
+	mov al, [ss:pcv2Mode]
+	cmp al, 2
+	jnz normalKeys
+	call checkPCV2Keys
+	jmp setKeypad
+normalKeys:
 	mov al, KEYPAD_READ_BUTTONS
 	out IO_KEYPAD, al
-	nop
-	nop
-	nop
-	nop
+	daa
 	in al, IO_KEYPAD
 	mov bl, al
 	and bl, 0x0F
 	mov al, KEYPAD_READ_ARROWS_H
 	out IO_KEYPAD, al
-	nop
-	nop
-	nop
-	nop
+	daa
 	in al, IO_KEYPAD
 	shl al, 4
 	or bl, al
 	mov al, KEYPAD_READ_ARROWS_V
 	out IO_KEYPAD, al
-	nop
-	nop
-	nop
-	nop
+	daa
 	in al, IO_KEYPAD
 	mov bh, al
+setKeypad:
 	mov ax, [es:keysHeld]
 	mov [es:keysHeld], bx
 	xor ax, bx
@@ -1651,7 +1709,6 @@ acknowledgeVBlankInterrupt:
 	mov al, INT_VBLANK_START
 	out INT_CAUSE_CLEAR, al
 
-	pop di
 	pop bx
 	pop ax
 	iret
@@ -1900,7 +1957,7 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20250315", 10, 0
+headLineStr: db " WonderSwan HW Test 20250327", 10, 0
 
 menuShowRegistersStr: db "  ShowStartup Registers.", 10, 0
 menuTestAllStr: db "  Test All.",10 , 0
@@ -2001,6 +2058,7 @@ startRegDS1: resw 1
 startRegPS: resw 1
 startRegSS: resw 1
 startRegDS0: resw 1
+pcv2Mode: resw 1
 
 globalFrameCounter: resw 1
 bgPos:

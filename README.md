@@ -1,4 +1,4 @@
-# WSHWTest V0.2.0 (20250313)
+# WSHWTest V0.2.0 (20250327)
 
 Hardware test suite for WonderSwan
 These descriptions are my interpretation of what is happening, that doesn't mean this is actualy what is happening, I'm open to pull requests for both code and interpretations of how things work.
@@ -18,7 +18,7 @@ The interrupt manager latches all enabled incoming interrupt requests until they
 
 All interrupts that are latched and visible in 0xB4 also cause interrupts if/when the cpu is able to accept them.
 
-The interrupt pin on the cpu is asserted as long as there are bits set in 0xB4, the interrupt manager allways sends the vector for the top enabled interrupt.
+The interrupt pin on the cpu is asserted as long as there are bits set in 0xB4, the interrupt manager allways sends the vector for the highest enabled interrupt.
 
 ## Timers
 
@@ -37,3 +37,4 @@ So what happens is:
 
 This turns on the Star icon and sleep mode for the LCD, turns off all interrupts except KEY.
 It waits for a KEY interrupt and then disables LCD sleep & star icon.
+Key interrupt seem to always happen on row 0x90.
