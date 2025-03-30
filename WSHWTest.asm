@@ -12,14 +12,15 @@
 ;
 ;-----------------------------------------------------------------------------
 
-	ORG 0x0000
+	ORG 0x40000
 	CPU 186
 	BITS 16
 
 ;SECTION .data
 	%include "WonderSwan.inc"
 
-	MYSEGMENT equ 0xf000
+	CODESEGMENT equ 0x4000
+	DATASEGMENT equ 0xf000
 	foregroundMap equ WS_TILE_BANK - MAP_SIZE
 	backgroundMap equ foregroundMap - MAP_SIZE
 	spriteTable equ backgroundMap - SPR_TABLE_SIZE
@@ -31,7 +32,7 @@
 
 	MENU_ENTRIES equ 9
 
-SECTION .text
+SECTION .text start=0x40000
 ;-----------------------------------------------------------------------------
 debugInit:				; this should be called when keypad row 0 is always 1
 ;-----------------------------------------------------------------------------
@@ -76,7 +77,7 @@ initialize:
 ;-----------------------------------------------------------------------------
 ; Initialize registers and RAM
 ;-----------------------------------------------------------------------------
-	mov ax, MYSEGMENT
+	mov ax, DATASEGMENT
 	mov ds, ax
 	xor ax, ax
 	mov es, ax			; Set ES segment to 0x0000 (RAM).
@@ -131,39 +132,39 @@ initialize:
 ;-----------------------------------------------------------------------------
 	mov di, 0*4		; Division error vector
 	mov word [es:di], divisionErrorHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 1*4		; Int1
 	mov word [es:di], int1InstructionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 2*4		; NMI
 	mov word [es:di], nmiHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 3*4		; Int3
 	mov word [es:di], int3InstructionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 4*4		; BRKV
 	mov word [es:di], overflowExceptionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 5*4		; CHKIND
 	mov word [es:di], boundsExceptionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 6*4		; Undefined instruction vector
 	mov word [es:di], undefinedInstructionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 7*4		; POLL
 	mov word [es:di], pollExceptionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 0x10*4	; output char vector
 	mov word [es:di], outputCharHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov ax, INT_BASE	; 0x20
 	out IO_INT_VECTOR, al
@@ -172,50 +173,50 @@ initialize:
 	add di, ax
 	shl di, 2
 	mov word [es:di], hblankTimerHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, INTVEC_VBLANK_START
 	add di, ax
 	shl di, 2
 ;	mov word [es:di], vblankHandler
 	mov word [es:di], vblankInterruptHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, INTVEC_VBLANK_TIMER
 	add di, ax
 	shl di, 2
 	mov word [es:di], vblankTimerHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, INTVEC_DRAWING_LINE
 	add di, ax
 	shl di, 2
 	mov word [es:di], lineCompareHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, INTVEC_SERIAL_RECEIVE
 	add di, ax
 	shl di, 2
 	mov word [es:di], serialReceiveHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, INTVEC_RTC_ALARM
 	add di, ax
 	shl di, 2
 	mov word [es:di], cartridgeIrqHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, INTVEC_KEY_PRESS
 	add di, ax
 	shl di, 2
 	mov word [es:di], keyPressHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, INTVEC_SERIAL_SEND
 	add di, ax
 	shl di, 2
 	mov word [es:di], serialTransmitHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 
 	; Clear HBL & Timers
@@ -468,12 +469,6 @@ turnOffLCD:
 	and al, 0xFE		; LCD off
 	out IO_LCD_IF_CTRL, al
 
-lcdWait:
-	hlt
-	mov ax, [es:keysHeld]
-	test al, PAD_A | PAD_B | PAD_START
-	jnz lcdWait
-
 	cli
 	mov al, [ss:pcv2Mode]
 	cmp al, 2
@@ -487,12 +482,23 @@ lcdWait:
 	; Enable only Joy interrupt
 	mov al, INT_KEY_PRESS
 	out IO_INT_ENABLE, al
+	mov cx, 4						; Wait 4 frames to settle key bounces.
+.kWait0:
+	in al, IO_LCD_LINE
+	cmp al, 0x91
+	jz .kWait0
+.kWait1:
+	in al, IO_LCD_LINE
+	cmp al, 0x91
+	jnz .kWait1
+	loop .kWait0
+
 	; Acknowledge all interrupts
 	mov al, 0xFF
 	out INT_CAUSE_CLEAR, al
 
 	sti
-	hlt					; Wait for key press
+	hlt					; Wait for key press INT
 
 	; Enable VBL interrupt
 	mov al, INT_VBLANK_START
@@ -1649,13 +1655,6 @@ checkPCV2Keys:
 	pop si
 	ret
 ;-----------------------------------------------------------------------------
-pcv2udl:
-	db 0x0, 0x8, 0x0, 0x8, 0x4, 0xC, 0x4, 0xC, 0x1, 0x9, 0x1, 0x9, 0x5, 0xD, 0x5, 0xD
-pcv2rev:
-	db 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1
-pcv2pcc:
-	db 0x0, 0x8, 0x0, 0x4, 0x8, 0xC, 0x8, 0xC, 0x0, 0x4, 0x0, 0x4, 0x8, 0xC, 0x8, 0xC
-;-----------------------------------------------------------------------------
 ; Our vblank interrupt handler
 ;-----------------------------------------------------------------------------
 vblankInterruptHandler:
@@ -1884,6 +1883,7 @@ endOutput:
 ;-----------------------------------------------------------------------------
 ; Constants area
 ;-----------------------------------------------------------------------------
+SECTION .data start=0xF0000
 
 	align 2
 
@@ -1951,13 +1951,20 @@ SoundSamples:
 	db 0x98,0xCB,0xED,0xFF,0xFF,0xEF,0xBD,0x8A,0x57,0x24,0x01,0x00,0x00,0x21,0x43,0x76
 	db 0x98,0xCB,0xED,0xFF,0xFF,0xEF,0xBD,0x8A,0x57,0x24,0x01,0x00,0x00,0x21,0x43,0x76
 
+pcv2udl:
+	db 0x0, 0x8, 0x0, 0x8, 0x4, 0xC, 0x4, 0xC, 0x1, 0x9, 0x1, 0x9, 0x5, 0xD, 0x5, 0xD
+pcv2rev:
+	db 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1
+pcv2pcc:
+	db 0x0, 0x8, 0x0, 0x4, 0x8, 0xC, 0x8, 0xC, 0x0, 0x4, 0x0, 0x4, 0x8, 0xC, 0x8, 0xC
+
 prepareData:
 	dw 0xF0AB, 0x570D
 
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20250327", 10, 0
+headLineStr: db " WonderSwan HW Test 20250330", 10, 0
 
 menuShowRegistersStr: db "  ShowStartup Registers.", 10, 0
 menuTestAllStr: db "  Test All.",10 , 0
@@ -2041,7 +2048,7 @@ fHexPrefixStr: db " F:0x", 0
 
 author: db "Written by Fredrik Ahlström, 2023-2025"
 
-	ROM_HEADER initialize, MYSEGMENT, RH_WS_COLOR, RH_ROM_4MBITS, RH_NO_SRAM, RH_HORIZONTAL
+	ROM_HEADER initialize, CODESEGMENT, RH_WS_COLOR, RH_ROM_4MBITS, RH_NO_SRAM, RH_HORIZONTAL
 
 SECTION .bss start=0x0100 ; Keep space for Int Vectors
 
