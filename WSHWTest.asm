@@ -16,7 +16,6 @@
 	CPU 186
 	BITS 16
 
-;SECTION .data
 	%include "WonderSwan.inc"
 
 	CODESEGMENT equ 0x4000
@@ -37,14 +36,14 @@ SECTION .text start=0x40000
 debugInit:				; this should be called when keypad row 0 is always 1
 ;-----------------------------------------------------------------------------
 	mov al, 1
-	mov [ss:pcv2Mode], al
+	mov [ss:bootMode], al
 	jmp initialize
 	times	(16)-$+$$ db 0x00
 ;-----------------------------------------------------------------------------
 pcv2Init:				; this should be called when keypad row 1 is always 1
 ;-----------------------------------------------------------------------------
 	mov al, 2
-	mov [ss:pcv2Mode], al
+	mov [ss:bootMode], al
 ;	jmp initialize
 ;-----------------------------------------------------------------------------
 initialize:
@@ -66,14 +65,34 @@ initialize:
 	mov [ss:startRegIX], si
 	mov [ss:startRegIY], di
 	mov ax, es
-	mov [es:startRegDS1], ax
+	mov [ss:startRegDS1], ax
 	mov ax, cs
-	mov [es:startRegPS], ax
+	mov [ss:startRegPS], ax
 ;	mov ax, ss
-;	mov [es:startRegSS], ax
+;	mov [ss:startRegSS], ax
 	mov ax, ds
-	mov [es:startRegDS0], ax
+	mov [ss:startRegDS0], ax
 
+; Dump IO Regs
+	mov cx, 0xC0
+	mov dx, 0
+	mov bp, 0
+.b0:
+	in al, dx
+	mov [ss:startIORegs,bp], al
+	add dx, 1
+	add bp, 1
+	loop .b0
+
+	in al, SYSTEM_CTRL1
+	test al, 0x02			; Color model?
+	jnz notPCV2
+	in al, IO_SND_OUT_CTRL
+	test al, 0x80			; Headphones connected?
+	jz notPCV2
+	mov al, [ss:bootMode]
+	mov [ss:pcv2Mode], al
+notPCV2:
 ;-----------------------------------------------------------------------------
 ; Initialize registers and RAM
 ;-----------------------------------------------------------------------------
@@ -88,8 +107,8 @@ initialize:
 	mov sp, WS_STACK
 
 	; Clear Ram
-	mov di, 0x0120
-	mov cx, 0x1E70
+	mov di, globalFrameCounter
+	mov cx, 0x1800
 	rep stosw
 
 	out IO_SRAM_BANK,al
@@ -97,7 +116,6 @@ initialize:
 ;-----------------------------------------------------------------------------
 ; Initialize variables
 ;-----------------------------------------------------------------------------
-	mov word [es:globalFrameCounter], 0
 	mov word [es:lfsr1], 0x0234
 	mov word [es:lfsr2], 0x1234
 
@@ -217,7 +235,6 @@ initialize:
 	shl di, 2
 	mov word [es:di], serialTransmitHandler
 	mov word [es:di + 2], CODESEGMENT
-
 
 	; Clear HBL & Timers
 	xor ax, ax
@@ -587,6 +604,39 @@ writeStartRegs:
 	mov ax, [es:startRegDS0]
 	call writeStartReg
 
+	call checkKeyInput
+
+	mov al, 10
+	int 0x10
+	mov al, 10
+	int 0x10
+
+	mov dx, 0x80
+	mov bp, 0
+.b1:
+	mov ax, bp
+	call printHexB
+	mov al, ':'
+	int 0x10
+	mov cx, 8
+.b0:
+	mov al, ' '
+	int 0x10
+	mov al, [ss:startIORegs,bp]
+	call printHexB
+	add bp, 1
+	loop .b0
+	mov al, 10
+	int 0x10
+	sub dx, 8
+	jnz .b1
+
+	cmp bp, 0xC0
+	jz .end
+	call checkKeyInput
+	mov dx, 0x40
+	jmp .b1
+.end:
 	ret
 
 ;-----------------------------------------------------------------------------
@@ -1220,7 +1270,7 @@ noHeadPhones:
 	out IO_SND_VOL_4, al
 
 	xor ah,ah
-	mov bl, 6
+	mov bl, 7
 	mov cl, SND_1_ON | SND_2_ON | SND_3_ON | SND_4_ON
 soundLoop:
 	test al, (PAD_LEFT<<4)
@@ -1964,7 +2014,7 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20250330", 10, 0
+headLineStr: db " WonderSwan HW Test 20250407", 10, 0
 
 menuShowRegistersStr: db "  ShowStartup Registers.", 10, 0
 menuTestAllStr: db "  Test All.",10 , 0
@@ -2052,6 +2102,8 @@ author: db "Written by Fredrik Ahlström, 2023-2025"
 
 SECTION .bss start=0x0100 ; Keep space for Int Vectors
 
+startIORegs: resb 0xC0
+
 startRegF: resw 1
 startRegAW: resw 1
 startRegCW: resw 1
@@ -2065,7 +2117,8 @@ startRegDS1: resw 1
 startRegPS: resw 1
 startRegSS: resw 1
 startRegDS0: resw 1
-pcv2Mode: resw 1
+bootMode: resb 1
+pcv2Mode: resb 1
 
 globalFrameCounter: resw 1
 bgPos:

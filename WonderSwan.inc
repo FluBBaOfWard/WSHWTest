@@ -260,6 +260,8 @@ SND_OUT_STEREO	equ	0x08
 IOw_SND_RANDOM	equ	0x92
 IO_SND_CH2_SMP	equ	0x94	; Ch2 Voice Sample 8 bits unsigned
 
+IO_SND_HW_VOL	equ	0x9E
+
 SYSTEM_CTRL1	equ	0xA0
 WS_COLOR		equ	0x02
 WS_MONO			equ	0x00
