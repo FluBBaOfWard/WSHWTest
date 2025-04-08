@@ -1,4 +1,4 @@
-# WSHWTest V0.2.0 (20250407)
+# WSHWTest V0.2.0 (20250408)
 
 Hardware test suite for WonderSwan
 These descriptions are my interpretation of what is happening, that doesn't mean this is actualy what is happening, I'm open to pull requests for both code and interpretations of how things work.
