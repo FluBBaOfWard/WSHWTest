@@ -33,6 +33,10 @@ So what happens is:
 3. If counted down value was zero, check repeat bit and fetch timer value.
 4. Is Timer on? Write back downcounted/timer value to counter.
 
+## IO Registers
+
+This tests the writability of the IO registers, this does not test the functionality of the registers. Not all registers are tested.
+
 ## LCD off
 
 This turns on the Star icon and sleep mode for the LCD, turns off all interrupts except KEY.

@@ -767,7 +767,7 @@ int3Fail:
 	call writeString
 
 	; Enable VBL interrupt
-	mov al, INT_VBLANK_START 
+	mov al, INT_VBLANK_START
 	out IO_INT_ENABLE, al
 
 	mov bl,80
@@ -794,7 +794,7 @@ int4Fail:
 	call writeString
 
 	; Enable VBL interrupt
-	mov al, INT_VBLANK_START 
+	mov al, INT_VBLANK_START
 	out IO_INT_ENABLE, al
 
 	mov bl,40
@@ -825,7 +825,7 @@ int5Fail:
 	call writeString
 
 	; Enable VBL interrupt
-	mov al, INT_VBLANK_START 
+	mov al, INT_VBLANK_START
 	out IO_INT_ENABLE, al
 
 	mov bl,40
@@ -834,7 +834,7 @@ int5Fail:
 	call waitLine
 
 	; Acknowledge VBL interrupt
-	mov al, INT_VBLANK_START 
+	mov al, INT_VBLANK_START
 	out INT_CAUSE_CLEAR, al
 
 	mov word [es:vblankIrqCount], 0
@@ -915,7 +915,7 @@ int8Fail:
 	sti
 ;-----------------------------------------------------------------------------
 	; Enable VBL interrupt
-	mov al, INT_VBLANK_START 
+	mov al, INT_VBLANK_START
 	out IO_INT_ENABLE, al
 	mov byte [es:isTesting], 0
 	xor ax, ax
@@ -1131,7 +1131,7 @@ timer5Fail:
 	mov si, okStr
 timer6Fail:
 	call writeString
-	mov al, INT_VBLANK_START 
+	mov al, INT_VBLANK_START
 	out IO_INT_ENABLE, al
 	sti
 	ret
@@ -1139,7 +1139,7 @@ timer6Fail:
 testVBlankTimer:
 
 	; Enable VBL interrupt
-	mov al, INT_VBLANK_START 
+	mov al, INT_VBLANK_START
 	out IO_INT_ENABLE, al
 
 	mov byte [es:isTesting], 0
@@ -1199,9 +1199,8 @@ endIOColorTest:
 	and al, ~VMODE_COLOR
 	out SYSTEM_CTRL2, al
 endIOTest:
-	; Enable VBL interrupt
-	mov al, INT_VBLANK_START 
-	out IO_INT_ENABLE, al
+	mov si, doneStr
+	call writeString
 	mov byte [es:isTesting], 0
 	xor ax, ax
 	ret
@@ -1223,6 +1222,96 @@ IOTestLoop:
 skipIOTest:
 	inc dl
 	loop IOTestLoop
+
+;-----------------------------------------------------------------------------
+; Special regs
+
+	mov dx, IO_SND_OUT_CTRL	; 0x91
+	mov bx, 0x7f0f			; Ignore top bit result.
+	call testIORegWithMask2
+
+	mov al, NOISE_RESET
+	out IO_SND_NOISE_CTRL, al	; Clear LFSR
+	mov dx, IOw_SND_RANDOM	; 0x92
+	xor bx, bx				; Result should be zero.
+	call testIORegWithMask
+	mov dx, IOw_SND_RANDOM+1	; 0x93
+	xor bx, bx				; Result should be zero.
+	call testIORegWithMask
+
+	mov dx, SYSTEM_CTRL1	; 0xA0
+	in al, dx
+	mov bp, ax				; Save old IO value
+	and al, 0x4				; Keep 8/16-bit bus
+	out dx, al
+	nop
+	in al, dx
+	mov bx, bp
+	and bl, 0x87			; These bits can not/should not be cleared once set.
+	xor al, bl
+	jz ioTest1Ok
+	call ioRegFail
+ioTest1Ok:
+	mov ax, bp
+	or al, 0xfe				; Don't lock boot rom if not set.
+	out dx, al
+	nop
+	in al, dx
+	mov bx, bp
+	or bl, 0x0c
+	xor al, bl
+	jz ioTest2Ok
+	call ioRegFail
+ioTest2Ok:
+	mov ax, bp		; Restore old IO value
+	out dx, al
+
+	; Disable all interrupt
+	xor al, al
+	out IO_INT_ENABLE, al
+	dec al
+	out INT_CAUSE_CLEAR, al
+	mov dx, IO_INT_VECTOR	; 0xB0
+	mov bx, 0x00f8
+	call testIORegWithMask
+	; Enable VBL interrupt
+	mov al, INT_VBLANK_START
+	out IO_INT_ENABLE, al
+
+	mov dx, IO_SERIAL_DATA	; 0xB1
+	in al, dx
+	mov bp, ax				; Save old IO value
+	xor al, 0xff			; Invert in value
+	out dx, al
+	nop
+	in al, dx
+	mov bx, bp
+	xor al, bl
+	jz ioTest3Ok
+	call ioRegFail
+ioTest3Ok:
+
+	mov dx, IO_INT_ENABLE	; 0xB2
+	mov bx, 0x00ff
+	call testIORegWithMask
+
+	mov dx, IO_SERIAL_STATUS	; 0xB3
+	mov bx, 0x00c4
+	call testIORegWithMask
+
+	mov dx, IO_INT_CAUSE	; 0xB4
+	in al, dx
+	mov bp, ax				; Save old IO value
+	xor al, 0xff			; Invert in value
+	out dx, al
+	nop
+	in al, dx
+	mov bx, bp
+	xor al, bl
+	jz ioTest4Ok
+	call ioRegFail
+ioTest4Ok:
+
 	ret
 ;-----------------------------------------------------------------------------
 breakIOTest:
@@ -1244,7 +1333,7 @@ setColorMode:
 	hlt					; Wait for VBlank to latch color mode.
 	ret
 ;-----------------------------------------------------------------------------
-testIORegWithMask:	; bl = mask, bh = setBits, dx = io port.
+testIORegWithMask:	; bl = test value mask, bh = always set bits, dx = io port.
 ;-----------------------------------------------------------------------------
 	in al, dx
 	mov bp, ax		; Save old IO value
@@ -1269,7 +1358,34 @@ testIORegWithMask:	; bl = mask, bh = setBits, dx = io port.
 	xor al, al
 	ret
 ;-----------------------------------------------------------------------------
+testIORegWithMask2:	; bl = test value mask, bh = io value mask, dx = io port.
+;-----------------------------------------------------------------------------
+	in al, dx
+	mov bp, ax		; Save old IO value
+	xor ah, ah
+	mov al, ah
+	out dx, al
+	nop
+	in al, dx
+	and al, bh
+	xor al, ah
+	jnz ioRegFail
+	mov ah, 0xff
+	mov al, ah
+	out dx, al
+	nop
+	in al, dx
+	and al, bh
+	and ah, bl
+	xor al, ah
+	jnz ioRegFail
+	mov ax, bp		; Restore old IO value
+	out dx, al
+	xor al, al
+	ret
+;-----------------------------------------------------------------------------
 ioRegFail:
+	push si
 	push ax
 	mov ax, bp		; Restore old IO value
 	out dx, al
@@ -1283,6 +1399,8 @@ ioRegFail:
 	int 0x10
 	mov si, failedStr
 	call writeString
+	pop si
+	mov al, 1
 	ret
 ;-----------------------------------------------------------------------------
 testHorizontalWindows:
@@ -2358,6 +2476,7 @@ valueStr: db "Value:0x", 0
 flagsStr: db " Flags:0x", 0
 okStr: db "Ok!", 10, 0
 failedStr: db "Failed!", 10, 0
+doneStr: db "Done.", 10, 0
 preFlagStr: db "PreF: ", 0
 postFlagStr: db "PostF: ", 0
 hexPrefixStr: db " 0x", 0
