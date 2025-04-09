@@ -1,4 +1,4 @@
-# WSHWTest V0.2.0 (20250408)
+# WSHWTest V0.2.0 (20250409)
 
 Hardware test suite for WonderSwan
 These descriptions are my interpretation of what is happening, that doesn't mean this is actualy what is happening, I'm open to pull requests for both code and interpretations of how things work.
@@ -42,6 +42,8 @@ Key interrupt seem to always happen on row 0x90.
 ### IO Startup Values
 
 ASWAN IO Registers:
+
+```text
 0x00 = 0
 0x01 = 0
 0x02 = 0x01
@@ -89,8 +91,11 @@ ASWAN IO Registers:
 0xB2-0xB7 = 0
 0xB8,0xB9 = 0x90
 0xB8-0xBF = 0
+```
 
 Sphinx IO Registers:
+
+```text
 0x00 = 0
 0x01 = 0
 0x02 = 0x01
@@ -128,8 +133,11 @@ Sphinx IO Registers:
 0xA8-0xB0 = 0
 0xB1 = rnd (0x25/0x27/0xA5)
 0xB2-0xBF = 0
+```
 
 Sphinx2 IO Registers:
+
+```text
 0x00 = 0
 0x01 = 0
 0x02 = 0x01
@@ -171,3 +179,4 @@ Sphinx2 IO Registers:
 0xA8-0xB0 = 0
 0xB1 = rnd (0xe0?)
 0xB2-0xBF = 0
+```

@@ -1,4 +1,6 @@
 WSHWTest Todo
 
+Test latching of Color mode, 16color & chunky bits.
+WSC Contrast is only changeable when IPL unlocked?
 Make icon test.
 Make test for Noise channel.

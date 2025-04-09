@@ -212,8 +212,8 @@ IO_SNDDMA_CTRL	equ	0x52
 SYSTEM_CTRL2	equ	0x60
 VMODE_16C_CHK	equ	0xE0	; 16 colors per tile chunky mode
 VMODE_16C_PLN	equ	0xC0	; 16 colors per tile planar mode
-VMODE_4C		equ	0x80	; 4 colors per tile color
-VMODE_4C_MONO	equ	0x00	; 4 colors per tile mono
+VMODE_COLOR		equ	0x80	; 4 colors per tile color
+VMODE_MONO		equ	0x00	; 4 colors per tile mono
 VMODE_CLEANINIT	equ	0x0C	; (?) from FF2
 
 SYSTEM_CTRL3	equ 0x62
