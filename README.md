@@ -1,7 +1,12 @@
-# WSHWTest V0.2.0 (20250409)
+# WSHWTest V0.2.0 (20250410)
 
 Hardware test suite for WonderSwan
 These descriptions are my interpretation of what is happening, that doesn't mean this is actualy what is happening, I'm open to pull requests for both code and interpretations of how things work.
+
+There are also 2 other test programs that I have made.
+
+* [WSCPUTest](https://github.com/FluBBaOfWard/WSCpuTest) - Tests functions of the NEC V30MZ CPU instructions.
+* [WSTimingTest](https://github.com/FluBBaOfWard/WSTimingTest) - Tests timing of the NEC V30MZ CPU instruction.
 
 ## Start Registers
 
