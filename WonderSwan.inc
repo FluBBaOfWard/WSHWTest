@@ -79,8 +79,8 @@ INTVEC_SERIAL_SEND	equ	0
 
 %define BG_CHR(tile,pal,bank,hflip,vflip)	(((vflip) << 15) | ((hflip) << 14) | ((bank) << 13) | ((pal) << 9) | (tile))
 
-%macro	ROM_HEADER	6	; Label, Segment, WSType, RomSize, SRamSize, WSSpec
-	times	((64*1024)-16)-$+$$ db 0xFF
+%macro	ROM_HEADER	6	; Label, Segment, WSType, RomSize, NVRamSize, WSSpec
+SECTION header start=0xFFFF0
 
 	db	0xEA	; jmpf
 	dw	%1	; Label
@@ -259,6 +259,9 @@ SND_OUT_STEREO	equ	0x08
 
 IOw_SND_RANDOM	equ	0x92
 IO_SND_CH2_SMP	equ	0x94	; Ch2 Voice Sample 8 bits unsigned
+
+IO_SND_TEST		equ 0x95
+SND_TEST_FAST_SWEEP	equ 0x02
 
 IO_SND_HW_VOL	equ	0x9E
 

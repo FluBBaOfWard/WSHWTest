@@ -29,7 +29,7 @@
 	PSR_Z equ 0x40
 	PSR_P equ 0x04
 
-	MENU_ENTRIES equ 10
+	MENU_ENTRIES equ 12
 
 SECTION .text start=0x40000
 ;-----------------------------------------------------------------------------
@@ -110,8 +110,6 @@ notPCV2:
 	mov di, globalFrameCounter
 	mov cx, 0x1800
 	rep stosw
-
-	out IO_SRAM_BANK,al
 
 ;-----------------------------------------------------------------------------
 ; Initialize variables
@@ -313,13 +311,15 @@ main:
 	call writeString
 	mov si, menuTestIORegsStr
 	call writeString
+	mov si, menuTestNoiseStr
+	call writeString
+	mov si, menuTestSweepStr
+	call writeString
 	mov si, menuTestWindowsStr
 	call writeString
 	mov si, menuTestSoundStr
 	call writeString
-	mov si, menuTestSweepStr
-	call writeString
-	mov si, menuTestNoiseStr
+	mov si, menuInteractSweepStr
 	call writeString
 	mov si, menuLcdOffStr
 	call writeString
@@ -395,23 +395,42 @@ dontMoveDown:
 	cmp cl, 4
 	jz testIORegs
 	cmp cl, 5
-	jz testWindows
-	cmp cl, 6
-	jz testSound
-	cmp cl, 7
-	jz testSoundSwp
-	cmp cl, 8
 	jz testNoise
+	cmp cl, 6
+	jz testSoundSwp
+	cmp cl, 7
+	jz testWindows
+	cmp cl, 8
+	jz testSound
 	cmp cl, 9
-	jz turnOffLCD
+	jz interactiveSoundSwp
 	cmp cl, 10
+	jz turnOffLCD
+	cmp cl, 11
 	jz powerOffWS
+	cmp cl, 12
+	jz testSpecificOpcode
 	; No input, restart main loop
 	jmp mainLoop
 ;-----------------------------------------------------------------------------
 ;
 ; END main area
 ;
+;-----------------------------------------------------------------------------
+testSpecificOpcode:
+	mov cx, 0xf000
+specLoop:
+	%rep    60
+;	or al, [bx,si]
+;	or al, ah
+	db 0x08, 0x00
+	%endrep
+	loop specLoop
+	hlt
+	mov bx, [es:keysHeld]
+	test bl, PAD_A
+	jz testSpecificOpcode
+	jmp main
 ;-----------------------------------------------------------------------------
 showStartRegs:
 	call writeStartRegs
@@ -424,6 +443,8 @@ testAll:
 	call testIrq
 	call testHBlankTimer
 	call testVBlankTimer
+	call testIORegisters
+	call testNoiseValues
 
 	call checkKeyInput
 	jmp main
@@ -451,6 +472,20 @@ testIORegs:
 	jmp main
 
 ;-----------------------------------------------------------------------------
+testNoise:
+	call testNoiseValues
+
+	call checkKeyInput
+	jmp main
+
+;-----------------------------------------------------------------------------
+testSoundSwp:
+	call testSoundSweep
+
+	call checkKeyInput
+	jmp main
+
+;-----------------------------------------------------------------------------
 testWindows:
 	call testHorizontalWindows
 
@@ -463,16 +498,9 @@ testSound:
 	jmp main
 
 ;-----------------------------------------------------------------------------
-testSoundSwp:
-	call testSoundSweep
+interactiveSoundSwp:
+	call interactiveSoundSweep
 
-	jmp main
-
-;-----------------------------------------------------------------------------
-testNoise:
-	call testNoiseValues
-
-	call checkKeyInput
 	jmp main
 
 ;-----------------------------------------------------------------------------
@@ -1571,6 +1599,395 @@ testSoundSweep:
 	mov si, testingSweepStr
 	call writeString
 
+	mov byte [es:isTesting], 1
+
+	xor al, al
+	out IO_SND_VOL_3, al
+	out IO_SND_SWEEP_TIME, al
+	inc al
+	out IO_SND_SWEEP, al
+
+	; Ch3 On Sweep Off
+	mov si, testingSweep2Str
+	call writeString
+
+	mov al, SND_3_ON
+	out IO_SND_CH_CTRL, al
+
+	hlt
+	mov bx, 0x800-0x140			;500Hz?
+	mov ax, bx
+	out IOw_SND_FREQ_3, ax
+	hlt
+
+	in ax, IOw_SND_FREQ_3
+	cmp ax, bx
+	mov si, failedStr
+	jnz sweep1Fail
+	mov si, okStr
+sweep1Fail:
+	call writeString
+
+	; Ch3 On Sweep On
+	mov si, testingSweep3Str
+	call writeString
+
+	mov al, SND_3_ON | SND_3_SWEEP
+	out IO_SND_CH_CTRL, al
+
+	hlt
+	mov bx, 0x800-0x140			;500Hz?
+	mov ax, bx
+	out IOw_SND_FREQ_3, ax
+	hlt
+
+	in ax, IOw_SND_FREQ_3
+	cmp ax, bx
+	mov si, failedStr
+	jz sweep2Fail
+	mov si, okStr
+sweep2Fail:
+	call writeString
+
+	; Ch3 Off Sweep On
+	mov si, testingSweep4Str
+	call writeString
+
+	mov al, SND_3_SWEEP
+	out IO_SND_CH_CTRL, al
+
+	hlt
+	mov bx, 0x800-0x140			;500Hz?
+	mov ax, bx
+	out IOw_SND_FREQ_3, ax
+	hlt
+
+	in ax, IOw_SND_FREQ_3
+	cmp ax, bx
+	mov si, failedStr
+	jnz sweep3Fail
+	mov si, okStr
+sweep3Fail:
+	call writeString
+
+
+	; Timing 0, Val 0
+	mov si, testingSweepT0V0Str
+	call writeString
+
+	xor al, al
+	out IO_SND_SWEEP, al
+	mov al, SND_3_ON | SND_3_SWEEP
+	out IO_SND_CH_CTRL, al
+
+	hlt
+	mov bx, 0x800-0x140			;500Hz?
+	mov ax, bx
+	out IOw_SND_FREQ_3, ax
+	hlt
+
+	in ax, IOw_SND_FREQ_3
+	cmp ax, bx
+
+	mov si, okStr
+	jz sweepT0V0Ok
+sweepT0V0Fail:
+	mov si, failedStr
+sweepT0V0Ok:
+	call writeString
+
+	; Timing 0, Val 1
+	mov si, testingSweepT0V1Str
+	call writeString
+
+	mov al, 1
+	out IO_SND_SWEEP, al
+
+	call sweepMeasure
+	cmp bx, 1
+	jnz sweepT0V1Fail
+	sub al, 32
+	sar al, 1
+	jns .f0
+	add al, 1
+.f0:
+	mov si, okStr
+	jz sweepT0V1Ok
+sweepT0V1Fail:
+	mov si, failedStr
+sweepT0V1Ok:
+	call writeString
+
+
+	; Timing 1, Val 1
+	mov si, testingSweepT1V1Str
+	call writeString
+
+	mov al, 1
+	out IO_SND_SWEEP_TIME, al
+
+	call sweepMeasure
+	cmp bx, 1
+	jnz sweepT1V1Fail
+	sub al, 64
+	sar al, 1
+	jns .f0
+	add al, 1
+.f0:
+	mov si, okStr
+	jz sweepT1V1Ok
+sweepT1V1Fail:
+	mov si, failedStr
+sweepT1V1Ok:
+	call writeString
+
+
+	; Timing 2, Val 1
+	mov si, testingSweepT2V1Str
+	call writeString
+
+	mov al, 2
+	out IO_SND_SWEEP_TIME, al
+
+	call sweepMeasure
+	cmp bx, 1
+	jnz sweepT2V1Fail
+	sub al, 96
+	sar al, 1
+	jns .f0
+	add al, 1
+.f0:
+	mov si, okStr
+	jz sweepT2V1Ok
+sweepT2V1Fail:
+	mov si, failedStr
+sweepT2V1Ok:
+	call writeString
+
+
+	; Timing 3, Val 1
+	mov si, testingSweepT3V1Str
+	call writeString
+
+	mov al, 3
+	out IO_SND_SWEEP_TIME, al
+
+	call sweepMeasure
+	cmp bx, 1
+	jnz sweepT3V1Fail
+	sub al, 128
+	sar al, 1
+	jns .f0
+	add al, 1
+.f0:
+	mov si, okStr
+	jz sweepT3V1Ok
+sweepT3V1Fail:
+	mov si, failedStr
+sweepT3V1Ok:
+	call writeString
+
+
+	; Timing 7, Val 1
+	mov si, testingSweepT7V1Str
+	call writeString
+
+	mov al, 7
+	out IO_SND_SWEEP_TIME, al
+
+	call sweepMeasure
+	cmp bx, 1
+	jnz sweepT7V1Fail
+	sub al, 97
+	sar al, 1
+	jns .f0
+	add al, 1
+.f0:
+	mov si, okStr
+	jz sweepT7V1Ok
+sweepT7V1Fail:
+	mov si, failedStr
+sweepT7V1Ok:
+	call writeString
+
+
+	; Timing 0, Val 16
+	mov si, testingSweepT0V16Str
+	call writeString
+
+	mov al, 16
+	out IO_SND_SWEEP, al
+	xor al, al
+	out IO_SND_SWEEP_TIME, al
+
+	call sweepMeasure
+	cmp bx, 16
+	jnz sweepT0V16Fail
+	sub al, 32
+	sar al, 1
+	jns .f0
+	add al, 1
+.f0:
+	mov si, okStr
+	jz sweepT0V16Ok
+sweepT0V16Fail:
+	mov si, failedStr
+sweepT0V16Ok:
+	call writeString
+
+	; Timing 0, Val -1
+	mov si, testingSweepT0V_1Str
+	call writeString
+
+	mov al, -1
+	out IO_SND_SWEEP, al
+
+	call sweepMeasure
+	cmp bx, -1
+	jnz sweepT0V_1Fail
+	sub al, 32
+	sar al, 1
+	jns .f0
+	add al, 1
+.f0:
+	mov si, okStr
+	jz sweepT0V_1Ok
+sweepT0V_1Fail:
+	mov si, failedStr
+sweepT0V_1Ok:
+	call writeString
+
+	; Write resets timer
+	mov si, testingSweepWrResStr
+	call writeString
+
+	mov bx, 0x800-0x140			;500Hz?
+	mov ax, bx
+	out IOw_SND_FREQ_3, ax
+
+	in al, IO_LCD_LINE
+	mov dl, al
+	mov cx, 64
+.b0:
+	in al, IO_LCD_LINE
+	cmp dl, al
+	jz .b0
+	mov dl, al
+	xor al, al
+	out IO_SND_SWEEP_TIME, al
+	loop .b0
+
+	in ax, IOw_SND_FREQ_3
+	sub ax, bx
+
+	mov si, okStr
+	jz sweepWrResOk
+sweepWrResFail:
+	mov si, failedStr
+sweepWrResOk:
+	call writeString
+
+	; Cpu cycle Timing 0, Val 1
+
+	mov si, testingSweepTstBitStr
+	call writeString
+	mov si, testingSweepT0V1Str
+	call writeString
+
+	mov al, 1
+	out IO_SND_SWEEP, al
+
+	mov al, SND_TEST_FAST_SWEEP
+	out IO_SND_TEST, al
+
+	xor ax, ax
+	out IOw_SND_FREQ_3, ax
+	daa
+	in ax, IOw_SND_FREQ_3
+	cmp ax, 6+10
+	jnz sweepCpu0Fail
+
+	xor ax, ax
+	out IOw_SND_FREQ_3, ax
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	daa
+	in ax, IOw_SND_FREQ_3
+	cmp ax, 6+260
+
+	mov si, okStr
+	jz sweepCpu0Ok
+sweepCpu0Fail:
+	mov si, failedStr
+sweepCpu0Ok:
+	call writeString
+
+
+	xor al, al					; Disable all sound test bits
+	out IO_SND_TEST, al
+
+endSweepTest:
+	mov si, doneStr
+	call writeString
+	mov byte [es:isTesting], 0
+	xor ax, ax
+	ret
+
+;-----------------------------------------------------------------------------
+sweepMeasure:
+	mov bx, 0x800-0x140			;500Hz?
+	mov ax, bx
+	out IOw_SND_FREQ_3, ax
+.b0:
+	in ax, IOw_SND_FREQ_3
+	cmp ax, bx
+	jz .b0
+	mov bx, ax
+
+	in al, IO_LCD_LINE
+	mov dl, al
+.b1:
+	in ax, IOw_SND_FREQ_3
+	sub ax, bx
+	jz .b1
+	mov bx, ax
+
+	in al, IO_LCD_LINE
+	sub al, dl
+	jnc .f0
+	sub al, 97
+.f0:
+	ret
+;-----------------------------------------------------------------------------
+; Interactive sound sweep.
+;-----------------------------------------------------------------------------
+interactiveSoundSweep:
+	mov si, testingSweepStr
+	call writeString
+
 	mov si, testingSweep0Str
 	call writeString
 
@@ -1591,24 +2008,35 @@ testSoundSweep:
 	mov bl, 6
 	mov cl, 1
 sweepLoop:
+	test al, (PAD_DOWN<<4)
+	jz noSweepValAdd
+	sub bl, 1
+noSweepValAdd:
+	test al, (PAD_UP<<4)
+	jz noSweepValSub
+	add bl, 1
+noSweepValSub:
 	test al, (PAD_LEFT<<4)
-	jz noSweepAdd
-	sub bl, 2
-	jns noSweepAdd
-	mov bl, 0
-noSweepAdd:
+	jz noSweepTimeAdd
+	sub cl, 1
+	jns noSweepTimeAdd
+	mov cl, 0
+noSweepTimeAdd:
 	test al, (PAD_RIGHT<<4)
-	jz noSweepSub
-	add bl, 2
-	cmp bl, 6
-	jc noSweepSub
-	mov bl, 6
-noSweepSub:
-	mov al, bl
-	out IO_SND_SWEEP, al
+	jz noSweepTimeSub
+	add cl, 1
+	cmp cl, 0x1F
+	jc noSweepTimeSub
+	mov cl, 0x1F
+noSweepTimeSub:
 
+	test al, (PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT)<<4
+	jz noSweepUpd
 	mov al, cl
 	out IO_SND_SWEEP_TIME, al
+noSweepUpd:
+	mov al, bl
+	out IO_SND_SWEEP, al
 
 	hlt
 	mov ax, [es:keysDown]
@@ -2396,17 +2824,18 @@ prepareData:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db " WonderSwan HW Test 20250410", 10, 0
+headLineStr: db " WonderSwan HW Test 20250804", 10, 0
 
 menuShowRegistersStr: db "  ShowStartup Registers.", 10, 0
 menuTestAllStr: db "  Test All.",10 , 0
 menuTestInterruptStr: db "  Test Interrupt Manager.", 10, 0
 menuTestTimersStr: db "  Test Timers.", 10, 0
 menuTestIORegsStr: db "  Test IO Regs.", 10, 0
+menuTestNoiseStr: db "  Test Noise Values.", 10, 0
+menuTestSweepStr: db "  Test Sound Sweep.", 10, 0
 menuTestWindowsStr: db "  Test Windows.", 10, 0
 menuTestSoundStr: db "  Test Sound Mixer.", 10, 0
-menuTestSweepStr: db "  Test Sound Sweep.", 10, 0
-menuTestNoiseStr: db "  Test Noise Values.", 10, 0
+menuInteractSweepStr: db "  Interactive Sound Sweep.", 10, 0
 menuLcdOffStr: db "  LCD Off.", 10, 0
 menuPowerOffStr: db "  Power Off.", 10, 0
 
@@ -2452,9 +2881,22 @@ testingSound0Str: db "Y1-Y4 to turn ch on/off", 10, 0
 testingSound1Str: db "X2,X4 to change shift", 10, 0
 testingSound2Str: db "Remove headphones to test", 10, 0
 
-testingSweepStr: db "Sound sweep", 10, 0
-testingSweep0Str: db "Y1-Y4 to change amount", 10, 0
+testingSweepStr: db "    Sound Ch3 Sweep", 10, 10, 0
+testingSweep0Str: db "X1,X3 to change amount", 10, 0
 testingSweep1Str: db "X2,X4 to change tick", 10, 0
+testingSweep2Str: db "Ch3 On, Sweep Off: ", 0
+testingSweep3Str: db "Ch3 On, Sweep On:  ", 0
+testingSweep4Str: db "Ch3 Off, Sweep On: ", 0
+testingSweepT0V0Str: db "Timing 0, Val 0:   ", 0
+testingSweepT0V1Str: db "Timing 0, Val 1:   ", 0
+testingSweepT1V1Str: db "Timing 1, Val 1:   ", 0
+testingSweepT2V1Str: db "Timing 2, Val 1:   ", 0
+testingSweepT3V1Str: db "Timing 3, Val 1:   ", 0
+testingSweepT7V1Str: db "Timing 7, Val 1:   ", 0
+testingSweepT0V16Str: db "Timing 0, Val 16:  ", 0
+testingSweepT0V_1Str: db "Timing 0, Val -1:  ", 0
+testingSweepWrResStr: db "Write resets Timer:", 0
+testingSweepTstBitStr: db "With Sweep Test Bit On", 10, 0
 
 testingNoiseStr: db "Sound Noise Values", 10, 0
 testingNoiseMode:  db "Noise Mode: ", 0

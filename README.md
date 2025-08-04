@@ -1,4 +1,4 @@
-# WSHWTest V0.2.0 (20250410)
+# WSHWTest V0.2.2 (20250804)
 
 Hardware test suite for WonderSwan
 These descriptions are my interpretation of what is happening, that doesn't mean this is actualy what is happening, I'm open to pull requests for both code and interpretations of how things work.
@@ -17,7 +17,7 @@ DS0/DS is set to boot rom base (0xFF00 for ASWAN and 0xFE00 for SPHINX/SPHINX2).
 
 ## Interrupts
 
-It's important to make distinction between the actual CPU part and the interrupt manager/handler. Even though they are part of the same physical chip in the WonderSwan they are logicaly different parts. The interrupt manager can set the interrupt pin high or low on the CPU and then it can supply an interrupt vector on the low 8 bits of the databus when the cpu request it (when it wants to take an interrupt).
+It's important to make distinction between the actual CPU part and the interrupt manager. Even though they are part of the same physical chip in the WonderSwan they are logicaly different parts. The interrupt manager can set the interrupt pin high or low on the CPU and then it can supply an interrupt vector on the low 8 bits of the databus when the cpu request it (when it wants to take an interrupt).
 
 The interrupt manager latches all enabled incoming interrupt requests until they are acknowledged with a write to port 0xB6, the interrupt requests are not cleared by disabling them through 0xB2. The 2 Timer interrupts, VBlank, Line Compare & Key interrupts are edge sensitive  and latched (remembered) until they are acknowledged. The serial & cartridge interrupts are latched as well but they can't be acknowledged as long as they are enabled and asserted by the corresponding device.
 
@@ -29,7 +29,7 @@ The interrupt pin on the cpu is asserted as long as there are bits set in 0xB4, 
 
 The timer logic is a bit backwards, the on/off bit is used to write back the downcounted value, the downcount always happens, this means that if the timer is off and the counter value is 1 an interrupt will happen but zero is not written back to the counter so it's basicly the same as timer on with repeat.
 Writing to the timer values instantly updates the counter value.
-Toggling the Timer on/off doesn't reload the counter value, it just pauses / resumes the counter.
+Toggling the Timer on/off doesn't reload the counter value, it just enables / disables the writeback of the counter.
 
 So what happens is:
 
@@ -41,6 +41,21 @@ So what happens is:
 ## IO Registers
 
 This tests the writability of the IO registers, this does not test the functionality of the registers. Not all registers are tested.
+
+## Sound Noise values
+
+This test that the noise values are correct in all modes.
+
+## Sound Sweep
+
+This test that the ch3 sweep works correctly.
+For sweep to be enabled it requires both ch3 and sweep bit to be set.
+Writing to the time register resets the timer counter.
+The last test enables bit 1 in sound test register (0x95) which makes the sweep run at full cpu speed.
+
+## Windows
+
+This shows a grey square mid screen, it should not show any black borders.
 
 ## LCD off
 
